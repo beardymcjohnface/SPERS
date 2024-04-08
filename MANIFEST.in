@@ -1,0 +1,4 @@
+include spers/spers.LICENSE
+include spers/spers.CITATION
+include spers/spers.VERSION
+recursive-include spers *
