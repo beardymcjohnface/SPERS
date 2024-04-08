@@ -3,6 +3,7 @@
 configfile: os.path.join(workflow.basedir, "../", "config", "config.yaml")
 configfile: os.path.join(workflow.basedir, "../", "config", "system_config.yaml")
 config.update(config["spers"])
+config.update(config["spers"]["ficture"])
 
 
 # Rules files
