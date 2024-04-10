@@ -12,23 +12,40 @@ spers:
                 X: x_location
                 Y: y_location
                 gene: feature_name
-        preprocessing:
+        minibatch:
             batch_size: 500
             batch_buff: 30
+        coarse_hex:
+            width: 12
+            min_transcripts_per_hex: 50
+            min_transcripts_per_gene: 50
+            min_transcripts_per_minibatch: 50
+        coarse_model:
+            test_split: 0.5
+            iterations: 5
+            n_components: 12
+            learning_method: online
+            batch_size: 512
+            learning_offset: 9
+            learning_decay: 0.7
+            doc_topic_prior: 1
+            random_state: 555
+            min_transcripts_scored: 100
+            top_n_models: 10
     resources:
         big:
-            mem: 64000
+            mem: "64G"
             cpu: 32
             time: "24:00:00"
         med:
-            mem: 16000
+            mem: "16G"
             cpu: 8
             time: "04:00:00"
         sml:
-            mem: 2000
+            mem: "2G"
             cpu: 1
             time: "01:00:00"
         ram:
-            mem: 16000
+            mem: "16G"
             cpu: 2
             time: "04:00:00"

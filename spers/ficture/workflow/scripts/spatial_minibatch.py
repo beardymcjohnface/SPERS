@@ -1,7 +1,6 @@
 import logging, gzip
 import numpy as np
 import pandas as pd
-import sys
 
 
 def read_input(infile):
@@ -57,7 +56,7 @@ def minibatch_transcripts(df, file, **params):
     """
     
     # Write header to output file
-    header = ["random_index", "X", "Y", "Count"]
+    header = ["random_index", "gene", "X", "Y", "Count"]
     with gzip.open(file, "wt") as wf:
         wf.write("\t".join(header) + "\n")
 

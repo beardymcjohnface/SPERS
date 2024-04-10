@@ -1,0 +1,12 @@
+name: python
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - pandas
+      - numpy
+      - joblib
+      - scikit-learn
+      - scipy

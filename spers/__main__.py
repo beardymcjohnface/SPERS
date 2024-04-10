@@ -50,7 +50,7 @@ def common_options(func):
             show_default=True,
         ),
         click.option(
-            "--threads", help="Number of threads to use", default=1, show_default=True
+            "--threads", help="Number of threads to use", default=16, show_default=True
         ),
         click.option(
             "--profile",

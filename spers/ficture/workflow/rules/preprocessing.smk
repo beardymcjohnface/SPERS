@@ -18,17 +18,35 @@ rule transcript_csv_to_tsv:
 
 
 rule spatial_minibatch:
+    """I think this is pointless???"""
     input:
         targets["transcripts"]
     output:
         targets["batched_matrix"]
     params:
-        params = config["preprocessing"]
+        params = config["minibatch"]
     log:
         os.path.join(dirs["logs"], "spatial_minibatch.txt")
     benchmark:
         os.path.join(dirs["bench"], "spatial_minibatch.txt")
     conda:
-        os.path.join(dirs["envs"],"pyscripts.yaml")
+        os.path.join(dirs["envs"], "pyscripts.yaml")
     script:
-        os.path.join(dirs["scripts"],"spatial_minibatch.py")
+        os.path.join(dirs["scripts"], "spatial_minibatch.py")
+
+
+rule coarse_hex:
+    input:
+        targets["batched_matrix"]
+    output:
+        targets["coarse_hex"]
+    params:
+        params = config["coarse_hex"]
+    log:
+        os.path.join(dirs["logs"], "coarse_hex.txt")
+    benchmark:
+        os.path.join(dirs["bench"], "coarse_hex.txt")
+    conda:
+        os.path.join(dirs["envs"], "pyscripts.yaml")
+    script:
+        os.path.join(dirs["scripts"], "hex_bin.py")
