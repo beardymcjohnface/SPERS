@@ -6,7 +6,7 @@ SPatialomics Enhanced Research Suite (we can change the name later)
 
 ```shell
 # create a conda env for the install
-conda create -n spers python-3.12
+conda create -n spers python=3.12
 conda activate spers
 
 # clone this repo
