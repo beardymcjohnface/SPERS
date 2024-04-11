@@ -1,7 +1,7 @@
 import logging, pickle, sys
 from joblib import Parallel, delayed
 from sklearn.model_selection import train_test_split
-from sklearn.utils import check_random_state
+from sklearn.utils import shuffle
 from scipy import sparse, stats
 from sklearn.decomposition import LatentDirichletAllocation as LDA
 import numpy as np
@@ -10,10 +10,10 @@ import pandas as pd
 
 def read_input(infile):
     """
-    Read in the transcripts TSV file into a pandas DF
+    Read in TSV file into a pandas DF
 
-    :param infile: filepath (str) of transcripts TSV
-    :return: pandas dataframe, expect ["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]
+    :param infile: filepath (str) of TSV.gz
+    :return: pandas dataframe
     """
     if infile.endswith(".gz"):
         df = pd.read_csv(infile, sep="\t", compression="gzip")
@@ -28,8 +28,8 @@ def calculate_gene_weights(df):
     :param df: pandas dataframe long format
     :return: pandas dataframe with ["gene", "Count", "Weight"]
     """
-    gene_weights = df.groupby(by=["gene"]).agg({"Count": sum}).reset_index()
-    gene_weights.Weight = gene_weights.Count * 1. / gene_weights.Count.sum()
+    gene_weights = df.groupby(by=["gene"]).agg({"Count": "sum"}).reset_index()
+    gene_weights["Weight"] = gene_weights.Count * 1. / gene_weights.Count.sum()
     return gene_weights
 
 
@@ -91,12 +91,13 @@ def chisq(k,info,total_k,total_umi):
     return res
 
 
-def train_select_lda(mtx, hex_bins, **params):
+def train_select_lda(mtx, hex_bins, hex_batches, **params):
     """
     Train and select lda
 
     :param mtx: pandas dataframe wide matrix (cols=gene, rows=hex_id)
     :param hex_bins: pandas daraframe long format from input
+    :param hex_batches: pandas dataframe of ["hex_id", "random_index"]
     :param params: parameters passed from config
     :return:
     """
@@ -106,32 +107,31 @@ def train_select_lda(mtx, hex_bins, **params):
 
     # split into test and train
     train_mtx, test_mtx = train_test_split(mtx_csr, test_size=params["test_split"])
+    test_mtx_csc = sparse.coo_array(test_mtx).tocsc()
     n_train, _ = train_mtx.shape
     n_test, _ = test_mtx.shape
 
+    # Need the gene weights
+    logging.debug("Calculating gene weights")
+    gene_weights = calculate_gene_weights(hex_bins)
+
     # misc params
-    factor_header = list(np.arange(params["n_components"]).astype(str))
+    factor_header = list(np.arange(params["lda"]["n_components"]).astype(str))
     gene_index = {x:i for i,x in enumerate(list(mtx.columns))}
     coherence_scores = []
     model_results = {}
 
     # Iterate run LDA
-    for r in range(params["iterations"]):
+    for r in range(params["generate_models"]):
         # Initialise the model
         model = LDA(
-            n_components=params["n_components"],
-            learning_method=params["learning_method"],
-            batch_size=params["batch_size"],
-            total_samples=params["total_samples"],
-            learning_offset=params["learning_offset"],
-            learning_decay=params["learning_decay"],
-            doc_topic_prior=params["doc_topic_prior"],
+            **params["lda"],
             n_jobs=params["threads"],
             verbose=0,
             random_state=params["random_state"])
 
         # Shuffle and score
-        # params["rng"].shuffle(train_mtx) # todo: fix
+        train_mtx = shuffle(train_mtx, random_state=params["random_state"])
         _ = model.partial_fit(train_mtx)
         score_train = model.score(train_mtx) / n_train
         score_test = model.score(test_mtx) / n_test
@@ -168,23 +168,19 @@ def train_select_lda(mtx, hex_bins, **params):
         chidf.gene_total = chidf.gene_total.astype(int)
         chidf.sort_values(by=["factor", "Chi2"], ascending=[True, False], inplace=True)
 
-        # Need the gene weights
-        logging.debug("Calculating gene weights")
-        gene_weights = calculate_gene_weights(hex_bins)
-
         # Compute a "coherence" score using top DE gene co-occurrence
         score = []
-        for k in range(params["n_components"]):
-            wd_idx = chidf.loc[chidf.factor.eq(str(k))].gene.iloc[:params["top_n_models"]].map(gene_index).values
+        for k in range(params["lda"]["n_components"]):
+            wd_idx = chidf.loc[chidf.factor.eq(str(k))].gene.iloc[:params["output_models"]].map(gene_index).values
             wd_idx = sorted(list(wd_idx), key=lambda x: -gene_weights.Weight.values[x])
             s = 0
-            for ii in range(params["top_n_models"] - 1):
-                for jj in range(ii + 1, params["top_n_models"]):
+            for ii in range(params["output_models"] - 1):
+                for jj in range(ii + 1, params["output_models"]):
                     i = wd_idx[ii]
                     j = wd_idx[jj]
-                    idx = mtx.indices[mtx.indptr[i]:mtx.indptr[i + 1]]
-                    denom = mtx[:, [i]].toarray()[idx] * gene_weights.Weight.values[j] / gene_weights.Weight.values[i]
-                    num = mtx[:, [j]].toarray()[idx]
+                    idx = test_mtx_csc.indices[test_mtx_csc.indptr[i]:test_mtx_csc.indptr[i + 1]]
+                    denom = test_mtx_csc[:, [i]].toarray()[idx] * gene_weights.Weight.values[j] / gene_weights.Weight.values[i]
+                    num = test_mtx_csc[:, [j]].toarray()[idx]
                     s += (test_mtx_transform[idx, k].reshape((-1, 1)) * np.log(num / denom + 1)).sum()
             s0 = s / test_mtx_transform[:, k].sum()
             coherence_scores.append([r, k, s, s0])
@@ -200,13 +196,11 @@ def train_select_lda(mtx, hex_bins, **params):
     coherence_scores = coherence_scores.sort_values(ascending=False)
     best_model = model_results[coherence_scores.index[0]]["model"]
 
-    # Minibatch index
-    batch_index = hex_bins[["hex_id", "random_index"]]
-
     # refine with minibatches
-    for minibatch_id in np.unique(batch_index.random_index):
-        batch_hex_ids = batch_index[batch_index.random_index==minibatch_id].hex_id
-        batch_mtx = sparse.coo_array(mtx[mtx.hex_id.isin(batch_hex_ids)]).tocsr()
+    for minibatch_id in np.unique(hex_batches.random_index):
+        batch_hex_ids = hex_batches[hex_batches.random_index==minibatch_id].hex_id
+        batch_mtx = mtx[mtx.index.isin(batch_hex_ids)]
+        batch_mtx = sparse.coo_array(batch_mtx).tocsr()
         _ = best_model.partial_fit(batch_mtx)
 
     # Relabel factors
@@ -217,7 +211,7 @@ def train_select_lda(mtx, hex_bins, **params):
 
     # Rerun all units once and store results
     output_header = ["hex_id", "Count", "x", "y", "topK", "topP"] + factor_header
-    dtp = {"topK": int, "Count": int, "unit": str}
+    dtp = {"topK": int, "Count": int, "hex_id": str}
     dtp.update({x: float for x in ["topP"] + factor_header})
 
     # Get final hex bin model scores
@@ -226,12 +220,14 @@ def train_select_lda(mtx, hex_bins, **params):
     # FIT OUTPUT
     fit_result = pd.DataFrame()
     fit_result["hex_id"] = mtx.index
+    fit_result = fit_result.set_index("hex_id")
     fit_result["Count"] = np.sum(mtx_csr, axis=1)
 
     # Merge hex bin coords
-    hex_bin_coords = hex_bins[["hex_id","xbin","ybin"]].drop_duplicates().set_index("hex_id")
-    fit_result = pd.concat([fit_result, hex_bin_coords], axis=1, join="inner")
-    fit_result.rename(columns={"xbin":"x", "ybin":"y"})
+    hex_bin_coords = hex_bins[["hex_id","xbin","ybin"]]
+    hex_bin_coords = hex_bin_coords.drop_duplicates().set_index("hex_id")
+    fit_result = pd.concat([fit_result, hex_bin_coords], axis=1, join="inner").reset_index()
+    fit_result = fit_result.rename(columns={"xbin":"x", "ybin":"y"})
 
     # Top K/P
     fit_result["topK"] = np.argmax(mtx_csr_transform, axis=1).astype(int)
@@ -246,19 +242,19 @@ def train_select_lda(mtx, hex_bins, **params):
     # POSTERIOR COUNT OUTPUT
     post_count = np.array(mtx_csr_transform.T @ mtx_csr)
     post_count = pd.DataFrame(post_count.T, columns=factor_header, dtype="float64")
-    post_count["gene"] = mtx["gene"]
+    post_count["gene"] = gene_weights["gene"]
     post_count[["gene"] + factor_header].to_csv(
         params["out_pos"], sep="\t", index=False, float_format="%.2f", compression="gzip")
 
     # MODEL MATRIX OUTPUT
-    best_model.feature_names_in_ = mtx["gene"]
+    best_model.feature_names_in_ = gene_weights["gene"]
 
     # best_model.log_norm_scaling_const_ = scale_const # todo update if log norm
     best_model.unit_sum_mean_ = np.mean(np.sum(mtx_csr, axis=1))
 
     # model matrix dataframe
     model_matrix = pd.DataFrame(best_model.components_.T, columns=factor_header, dtype="float64")
-    model_matrix["gene"] = mtx["gene"]
+    model_matrix["gene"] = gene_weights["gene"]
 
     # write
     model_matrix[["gene"] + factor_header].to_csv(
@@ -271,26 +267,28 @@ def train_select_lda(mtx, hex_bins, **params):
 def main(params=None, **kwargs):
     logging.basicConfig(filename=kwargs["log_file"], filemode="w", level=logging.DEBUG)
 
-    params["rng"] = check_random_state(params["random_state"])
-
     logging.debug("Reading in hex binned transcripts")
-    hex_bins = read_input(kwargs["infile"])
+    hex_binned = read_input(kwargs["in_hex"])
+
+    logging.debug("Reading in hex bin batches")
+    hex_batches = read_input(kwargs["in_bch"])
 
     logging.debug("Reformatting the dataframe")
-    hex_mtx = df_to_mtx(hex_bins)
+    hex_mtx = df_to_mtx(hex_binned)
     params["total_samples"], _ = hex_mtx.shape
 
     # TODO: add in options for log normalisation
 
     logging.debug("Iterative running LatentDirichletAllocation")
-    train_select_lda(hex_mtx, hex_bins, **kwargs, **params)
+    train_select_lda(hex_mtx, hex_binned, hex_batches, **kwargs, **params)
 
 
 
 
 if __name__ == "__main__":
     main(
-        infile=snakemake.input[0],
+        in_hex=snakemake.input.hex,
+        in_bch=snakemake.input.bch,
         out_fit=snakemake.output.fit,
         out_res=snakemake.output.res,
         out_coh=snakemake.output.coh,

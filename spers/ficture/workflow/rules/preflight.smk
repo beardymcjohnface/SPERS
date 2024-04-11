@@ -14,11 +14,11 @@ dirs = {
 targets = {
     # Convert to ficture TSV format
     "transcripts": os.path.join(dirs["results"], "transcripts.tsv.gz"),
-    "transcript_minmax": os.path.join(dirs["temp"], "transcript_minmax.tsv"),
-    "transcript_counts": os.path.join(dirs["temp"], "transcript_counts.tsv.gz"),
+    "transcript_minmax": os.path.join(dirs["results"], "transcript_minmax.tsv"),
+    "transcript_counts": os.path.join(dirs["results"], "transcript_counts.tsv.gz"),
 
     # Preprocessing
-    "batched_matrix": os.path.join(dirs["temp"], "transcripts.batched.matrix.tsv.gz"),
+    "batched_matrix": os.path.join(dirs["results"], "transcripts.batched.matrix.tsv.gz"),
 
     # Coarse hexagon transcript bins
     "coarse_hex": os.path.join(dirs["results"], "transcripts.coarse_hex.tsv.gz"),
@@ -30,6 +30,7 @@ targets = {
     "coarse_pos": os.path.join(dirs["results"], "coarse_model", "posterior_counts.tsv.gz"),
     "coarse_mtx": os.path.join(dirs["results"], "coarse_model", "matrix.tsv.gz"),
     "coarse_mdl": os.path.join(dirs["results"], "coarse_model", "model.pkl"),
+    "coarse_plt": os.path.join(dirs["results"], "coarse_model", "plot.png"),
 }
 
 

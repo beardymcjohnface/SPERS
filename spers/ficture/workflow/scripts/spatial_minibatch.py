@@ -21,7 +21,7 @@ def batch_dimensions(df, **params):
     """
     Calculate the X and Y batch spacing to approximately accommodate the batch size
 
-    :param df: Pandas DF of transcripts ["X", "Y", "gene", "Count"]
+    :param df: Pandas DF of transcripts ["hex_id", "X", "Y", "gene", "Count"]
     :param params: dict of config params ["batch_size", "batch_buff"]
     :return: params dict updated with "x_step", "y_step", "x_max", "y_max" ...
     """
@@ -49,14 +49,14 @@ def minibatch_transcripts(df, file, **params):
     """
     Create batches for transcripts based on batch dimensions
 
-    :param df: transcripts pandas dataframe ["X", "Y", "gene", "Count"]
+    :param df: transcripts pandas dataframe ["hex_id", "X", "Y", "gene", "Count"]
     :param file: output file path (str)
     :param params: dict config params
     :return: None
     """
     
     # Write header to output file
-    header = ["random_index", "gene", "X", "Y", "Count"]
+    header = ["random_index", "hex_id"]
     with gzip.open(file, "wt") as wf:
         wf.write("\t".join(header) + "\n")
 
@@ -77,7 +77,7 @@ def minibatch_transcripts(df, file, **params):
             df_slice["random_index"] = rand_ints.pop()
 
             # Append the slice to the output file
-            df_slice[header].to_csv(file, mode="a", sep="\t", compression="gzip", header=False, float_format="%.2f")
+            df_slice[header].drop_duplicates().to_csv(file, mode="a", sep="\t", compression="gzip", header=False, float_format="%.2f")
 
             y_start += params["y_step"]
         x_start += params["x_step"]
@@ -95,7 +95,6 @@ def main(infile=None, outfile=None, log_file=None, params=None):
 
     logging.debug("Batching and writing transcripts")
     minibatch_transcripts(transcripts_df, outfile, **params)
-
 
 
 if __name__ == "__main__":

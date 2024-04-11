@@ -17,18 +17,17 @@ def read_input(infile):
     return df
 
 
-def filter_min_transcripts_gene(df, min_transcripts_per_gene=None, min_transcripts_per_minibatch=None):
+def filter_min_transcripts_gene(df, min_transcripts_per_gene=None):
     """
     Filter transcripts for genes with total count < min gene count
 
-    :param df: Pandas dataframe with ["random_index", "X", "Y", "gene", "Count"]
+    :param df: Pandas dataframe with ["X", "Y", "gene", "Count"]
     :param min_transcripts_per_gene: int min required transcripts per gene
-    :param min_transcripts_per_minibatch: int min required transcripts per minibatch - not implemented
-    :return: Filtered Pandas dataframe with ["random_index", "X", "Y", "gene", "Count"]
+    :return: Filtered Pandas dataframe with ["X", "Y", "gene", "Count"]
     """
 
     # Collect total gene counts
-    gene_counts = df.groupby(by=["gene"]).agg({"Count":sum}).reset_index()
+    gene_counts = df.groupby(by=["gene"]).agg({"Count": "sum"}).reset_index()
 
     # List of genes above min cutoff
     gene_filter = list(gene_counts.loc[gene_counts["Count"]>=min_transcripts_per_gene]["gene"])
@@ -41,9 +40,9 @@ def transcript_to_hex_bins(df, scale=None):
     """
     Bin transcripts into hexagon bins based on param dimensions
 
-    :param df: Pandas dataframe with ["random_index", "X", "Y", "gene", "Count"]
+    :param df: Pandas dataframe with ["X", "Y", "gene", "Count"]
     :param scale: um size of hex bins
-    :return: Pandas dataframe with ["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]
+    :return: Pandas dataframe with ["X", "Y", "gene", "Count", "xbin", "ybin"]
     """
     # calculate scale for Y
     scale_sqrt3 = scale * math.sqrt(3)
@@ -73,29 +72,29 @@ def transcript_to_hex_bins(df, scale=None):
     df["ybin"] = np.where(df["d1"] > df["d2"], df["yn"], df["yns"])
 
     # Drop unused columns and return
-    return df[["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]]
+    return df[["X", "Y", "gene", "Count", "xbin", "ybin"]]
 
 
 def filter_bins_min_count(df, min_transcripts_per_hex=None):
     """
     Filter only hex bins with count > min_count
 
-    :param df: pandas dataframe with ["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]
+    :param df: pandas dataframe with ["X", "Y", "gene", "Count", "xbin", "ybin"]
     :param min_transcripts_per_hex: int minimum "Count" transcripts per hex bin
-    :return: pandas dataframe filtered with ["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]
+    :return: pandas dataframe filtered with ["X", "Y", "gene", "Count", "xbin", "ybin"]
     """
     # create hex bin IDs for counting and filtering
-    df["hexid"] = df["xbin"].astype(str) + ":" + df["ybin"].astype(str)
+    df["hex_id"] = df["xbin"].round(decimals=2).astype(str) + ":" + df["ybin"].round(decimals=2).astype(str)
 
     # Collect list of hex IDs with sum Count > min_count
-    hex_filter = pd.DataFrame(df.groupby(["hexid"])["Count"].sum())
+    hex_filter = pd.DataFrame(df.groupby(["hex_id"])["Count"].sum())
     hex_filter = list(hex_filter[hex_filter["Count"]>min_transcripts_per_hex].index)
 
     # Filter the dataframe
-    df = df[df["hexid"].isin(hex_filter)]
+    df = df[df["hex_id"].isin(hex_filter)]
 
     # Drop unused columns and return
-    return df[["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]]
+    return df[["hex_id", "X", "Y", "gene", "Count", "xbin", "ybin"]]
 
 
 def main(infile=None, outfile=None, log_file=None, params=None):

@@ -22,16 +22,22 @@ spers:
             min_transcripts_per_minibatch: 50
         coarse_model:
             test_split: 0.5
-            iterations: 5
-            n_components: 12
-            learning_method: online
-            batch_size: 512
-            learning_offset: 9
-            learning_decay: 0.7
-            doc_topic_prior: 1
+            generate_models: 5
+            output_models: 5
             random_state: 555
             min_transcripts_scored: 100
-            top_n_models: 10
+            lda:
+                n_components: 12
+                learning_method: online
+                batch_size: 512
+                learning_offset: 9
+                learning_decay: 0.7
+                doc_topic_prior: 1
+        coarse_plot:
+            transcripts_per_hex: 5
+            palette: dark
+            size_scale: 50
+            point_scale: 5
     resources:
         big:
             mem: "64G"
