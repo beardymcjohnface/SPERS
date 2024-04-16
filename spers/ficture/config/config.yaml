@@ -47,6 +47,15 @@ spers:
             hex_width: 16
             n_steps: 3
             step_size: 4
+        transcript_plot:
+            hex_width: 16
+            min_transcripts_per_hex: 0
+            transcripts_per_hex: 50
+            palette: dark
+            background: white
+            microns_per_inch: 50
+            point_scale: 2.5
+            font_scale: 5
     resources:
         big:
             mem: "64G"

@@ -37,6 +37,8 @@ targets = {
 
     # Overlap rescore files
     "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.tsv.gz"),
+    "scored_png": os.path.join(dirs["rescore"], "plot.png"),
+    "scored_svg": os.path.join(dirs["rescore"], "plot.svg")
 }
 
 
