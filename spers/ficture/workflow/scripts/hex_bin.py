@@ -1,119 +1,138 @@
-import logging, math
+import logging, math, sys
 import numpy as np
 import pandas as pd
-
-
-def read_input(infile):
-    """
-    Read in the transcripts TSV file into a pandas DF
-
-    :param infile: filepath (str) of transcripts TSV
-    :return: pandas dataframe
-    """
-    if infile.endswith(".gz"):
-        df = pd.read_csv(infile, sep="\t", compression="gzip")
-    else:
-        df = pd.read_csv(infile, sep="\t")
-    return df
 
 
 def filter_min_transcripts_gene(df, min_transcripts_per_gene=None):
     """
     Filter transcripts for genes with total count < min gene count
 
-    :param df: Pandas dataframe with ["X", "Y", "gene", "Count"]
+    :param df: Pandas dataframe with ["transcript_id", "x", "y", "gene"]
     :param min_transcripts_per_gene: int min required transcripts per gene
-    :return: Filtered Pandas dataframe with ["X", "Y", "gene", "Count"]
+    :return: Filtered Pandas dataframe with ["transcript_id", "x", "y", "gene"]
     """
 
     # Collect total gene counts
-    gene_counts = df.groupby(by=["gene"]).agg({"Count": "sum"}).reset_index()
+    gene_counts = df.groupby("gene").size()
 
     # List of genes above min cutoff
-    gene_filter = list(gene_counts.loc[gene_counts["Count"]>=min_transcripts_per_gene]["gene"])
+    gene_filter = {k for k,v in gene_counts.items() if v >= min_transcripts_per_gene}
 
     # return the filtered dataframe
     return df.loc[df["gene"].isin(gene_filter)]
 
 
-def transcript_to_hex_bins(df, scale=None):
+def transcript_to_hex_bins(df, x_offset=0, y_offset=0, hex_width=None, **params):
     """
     Bin transcripts into hexagon bins based on param dimensions
 
-    :param df: Pandas dataframe with ["X", "Y", "gene", "Count"]
+    :param df: Pandas dataframe with ["x", "y", ...]
     :param scale: um size of hex bins
-    :return: Pandas dataframe with ["X", "Y", "gene", "Count", "xbin", "ybin"]
+    :return: Pandas dataframe with ["hex_id", "xbin", "ybin", "x", "y", ...]
     """
-    # calculate scale for Y
-    scale_sqrt3 = scale * math.sqrt(3)
+    # calculate scale for y
+    scale_sqrt3 = hex_width * math.sqrt(3)
+
+    # numpy array
+    logging.debug("Init numpy arrays")
+    x_ar = np.array(df["x"])
+    y_ar = np.array(df["y"])
 
     # Scale coords
-    df["xdiv"] = np.divmod(df["X"], scale / 2)[0]
-    df["ydiv"] = np.divmod(df["Y"], scale_sqrt3 / 2)[0]
+    logging.debug("Scale coords")
+    x_div = np.divmod(x_ar + x_offset, hex_width / 2)[0]
+    y_div = np.divmod(y_ar + y_offset, scale_sqrt3 / 2)[0]
 
-    # Nearest pair for X
-    df["xn"] = scale / 2 * (df["xdiv"] + np.where(df["xdiv"] % 2 == 1, 1, 0))
-    df["xns"] = scale / 2 * (df["xdiv"] + np.where(df["xdiv"] % 2 == 0, 1, 0))
+    # Nearest pair for x
+    logging.debug("Nearest x coords")
+    xn1 = hex_width / 2 * (x_div + np.where(x_div % 2 == 1, 1, 0))
+    xn2 = hex_width / 2 * (x_div + np.where(x_div % 2 == 0, 1, 0))
 
-    # Nearest pair for Y
-    df["yn"] = scale_sqrt3 / 2 * (df["ydiv"] + np.where(df["ydiv"] % 2 == 1, 1, 0))
-    df["yns"] = scale_sqrt3 / 2 * (df["ydiv"] + np.where(df["ydiv"] % 2 == 0, 1, 0))
+    # Nearest pair for y
+    logging.debug("Nearest y coords")
+    yn1 = scale_sqrt3 / 2 * (y_div + np.where(y_div % 2 == 1, 1, 0))
+    yn2 = scale_sqrt3 / 2 * (y_div + np.where(y_div % 2 == 0, 1, 0))
 
     # Distances for each nearest pair
-    df.loc[:, "d1"] = np.sqrt(
-        (df["X"] - df["xn"]) * (df["X"] - df["xn"]) + (df["Y"] - df["yn"]) * (df["Y"] - df["yn"])
+    logging.debug("Calculating distances")
+    dn1 = np.sqrt(
+        (x_ar + x_offset - xn1) * (x_ar + x_offset - xn1) +
+        (y_ar + y_offset - yn1) * (y_ar + y_offset - yn1)
     )
-    df.loc[:, "d2"] = np.sqrt(
-        (df["X"] - df["xns"]) * (df["X"] - df["xns"]) + (df["Y"] - df["yns"]) * (df["Y"] - df["yns"])
+    dn2 = np.sqrt(
+        (x_ar + x_offset - xn2) * (x_ar + x_offset - xn2) +
+        (y_ar + y_offset - yn2) * (y_ar + y_offset - yn2)
     )
 
     # Retain the nearest coords
-    df["xbin"] = np.where(df["d1"] > df["d2"], df["xn"], df["xns"])
-    df["ybin"] = np.where(df["d1"] > df["d2"], df["yn"], df["yns"])
+    logging.debug("Saving nearest centroids")
+    xbin = np.where(dn1 < dn2, xn1, xn2)
+    ybin = np.where(dn1 < dn2, yn1, yn2)
 
-    # Drop unused columns and return
-    return df[["X", "Y", "gene", "Count", "xbin", "ybin"]]
+    # Return dataframe
+    logging.debug("Adding to dataframe")
+    df["xbin"] = xbin
+    df["ybin"] = ybin
+
+    # create hex bin IDs for counting and filtering
+    logging.debug("Creating hex IDs")
+    # TODO: abandon this format of hex_id? is slow
+    df["hex_id"] = df["xbin"].astype(str) + "_" + df["ybin"].astype(str) + "_" + str(x_offset) + "_" + str(y_offset)
+
+    logging.debug("Done")
+    return df
 
 
 def filter_bins_min_count(df, min_transcripts_per_hex=None):
     """
     Filter only hex bins with count > min_count
 
-    :param df: pandas dataframe with ["X", "Y", "gene", "Count", "xbin", "ybin"]
+    :param df: pandas dataframe with ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
     :param min_transcripts_per_hex: int minimum "Count" transcripts per hex bin
-    :return: pandas dataframe filtered with ["X", "Y", "gene", "Count", "xbin", "ybin"]
+    :return: pandas dataframe filtered with ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
     """
-    # create hex bin IDs for counting and filtering
-    df["hex_id"] = df["xbin"].round(decimals=2).astype(str) + ":" + df["ybin"].round(decimals=2).astype(str)
 
-    # Collect list of hex IDs with sum Count > min_count
-    hex_filter = pd.DataFrame(df.groupby(["hex_id"])["Count"].sum())
-    hex_filter = list(hex_filter[hex_filter["Count"]>min_transcripts_per_hex].index)
+    # Collect total hex transcript counts
+    hex_counts = df.groupby("hex_id").size()
+
+    # List of hex_ids above min cutoff
+    hex_filter = {k for k,v in hex_counts.items() if v >= min_transcripts_per_hex}
 
     # Filter the dataframe
     df = df[df["hex_id"].isin(hex_filter)]
 
     # Drop unused columns and return
-    return df[["hex_id", "X", "Y", "gene", "Count", "xbin", "ybin"]]
+    return df
 
 
 def main(infile=None, outfile=None, log_file=None, params=None):
-    logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
+    file_handler = logging.FileHandler(filename=log_file)
+    stdout_handler = logging.StreamHandler(stream=sys.stdout)
+    handlers = [file_handler, stdout_handler]
+
+    logging.basicConfig(handlers=handlers,level=logging.DEBUG)
 
     logging.debug("Reading input transcripts: " + str(infile))
-    transcripts_df = read_input(infile)
+    transcripts_df = pd.read_csv(infile, sep="\t", compression="gzip")
 
-    logging.debug("Filtering low count genes")
-    transcripts_df = filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["min_transcripts_per_gene"])
+    if "min_transcripts_per_gene" in params.keys():
+        logging.debug("Filtering low count genes")
+        transcripts_df = filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["min_transcripts_per_gene"])
 
     logging.debug("Hex binning the transcripts")
-    transcripts_df = transcript_to_hex_bins(transcripts_df, scale=params["width"])
+    transcripts_df = transcript_to_hex_bins(transcripts_df, **params)
 
-    logging.debug("Filtering hex bins")
-    transcripts_df = filter_bins_min_count(transcripts_df, min_transcripts_per_hex=params["min_transcripts_per_hex"])
+    if "min_transcripts_per_hex" in params.keys():
+        logging.debug("Filtering hex bins")
+        transcripts_df = filter_bins_min_count(
+            transcripts_df,
+            min_transcripts_per_hex=params["min_transcripts_per_hex"]
+        )
 
-    logging.debug("Writing hex-binned transcripts")
-    transcripts_df.to_csv(outfile, sep="\t", compression="gzip", index=False, float_format="%.2f")
+    logging.debug("Writing output file")
+    # TODO: don't write the hex bins, just calculate them as needed, writing is the bottleneck
+    # pickle.dump(transcripts_df, open(outfile, "wb"))
+    transcripts_df.to_csv(outfile, sep="\t", index=False, float_format="%.2f", compression="gzip")
 
 
 if __name__ == "__main__":

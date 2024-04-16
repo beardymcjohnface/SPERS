@@ -2,9 +2,7 @@ rule transcript_csv_to_tsv:
     input:
         config["args"]["input"]
     output:
-        tsv=targets["transcripts"],
-        feat=targets["transcript_counts"],
-        minmax=targets["transcript_minmax"],
+        targets["transcripts"],
     params:
         params = config[config["args"]["platform"]]
     log:

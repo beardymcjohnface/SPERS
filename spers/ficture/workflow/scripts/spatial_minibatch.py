@@ -19,26 +19,26 @@ def read_input(infile):
 
 def batch_dimensions(df, **params):
     """
-    Calculate the X and Y batch spacing to approximately accommodate the batch size
+    Calculate the x and y batch spacing to approximately accommodate the batch size
 
-    :param df: Pandas DF of transcripts ["hex_id", "X", "Y", "gene", "Count"]
+    :param df: Pandas DF of transcripts ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
     :param params: dict of config params ["batch_size", "batch_buff"]
     :return: params dict updated with "x_step", "y_step", "x_max", "y_max" ...
     """
 
-    # Finding X and Y min and max values
-    params["x_min"], params["y_min"] = df[["X", "Y"]].values.min(axis=0)
-    params["x_max"], params["y_max"] = df[["X", "Y"]].values.max(axis=0)
+    # Finding x and y min and max values
+    params["x_min"], params["y_min"] = df[["xbin", "ybin"]].values.min(axis=0)
+    params["x_max"], params["y_max"] = df[["xbin", "ybin"]].values.max(axis=0)
 
-    # Find X and Y ranges
+    # Find x and y ranges
     params["xrange"] = params["x_max"] - params["x_min"]
     params["yrange"] = params["y_max"] - params["y_min"]
 
-    # Adjust X and Y batch sizes to fit data ranges
+    # Adjust x and y batch sizes to fit data ranges
     params["x_batch"] = round(params["xrange"] / (params["batch_size"] - params["batch_buff"]))
     params["y_batch"] = round(params["yrange"] / (params["batch_size"] - params["batch_buff"]))
 
-    # Calculate X and Y batch steps
+    # Calculate x and y batch steps
     params["x_step"] = ( params["xrange"] / params["x_batch"] ) - params["batch_buff"]
     params["y_step"] = ( params["yrange"] / params["y_batch"] ) - params["batch_buff"]
 
@@ -49,32 +49,32 @@ def minibatch_transcripts(df, file, **params):
     """
     Create batches for transcripts based on batch dimensions
 
-    :param df: transcripts pandas dataframe ["hex_id", "X", "Y", "gene", "Count"]
+    :param df: transcripts pandas dataframe ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
     :param file: output file path (str)
     :param params: dict config params
     :return: None
     """
     
     # Write header to output file
-    header = ["random_index", "hex_id"]
+    header = ["minibatch_id", "hex_id"]
     with gzip.open(file, "wt") as wf:
         wf.write("\t".join(header) + "\n")
 
     # Generate random integers for batch IDs
     rand_ints = set(np.random.randint(1000000000, size=1000000))
 
-    # Iterate X and Y steps and batch on the fly
+    # Iterate x and y steps and batch on the fly
     x_start = params["x_min"]
     while x_start + params["x_step"] + params["batch_buff"] <= params["x_max"]:
         y_start = params["y_min"]
         while y_start + params["y_step"] + params["batch_buff"] <= params["y_max"]:
 
             # Get dataframe slice for transcripts within batch boundaries
-            df_slice = df[(df.X >= x_start) & (df.X <= x_start + params["x_step"] + params["batch_buff"]) &
-                          (df.Y >= y_start) & (df.Y <= y_start + params["y_step"] + params["batch_buff"])]
+            df_slice = df[(df.xbin >= x_start) & (df.xbin <= x_start + params["x_step"] + params["batch_buff"]) &
+                          (df.ybin >= y_start) & (df.ybin <= y_start + params["y_step"] + params["batch_buff"])]
 
             # Add random index for the batch
-            df_slice["random_index"] = rand_ints.pop()
+            df_slice["minibatch_id"] = rand_ints.pop()
 
             # Append the slice to the output file
             df_slice[header].drop_duplicates().to_csv(file, mode="a", sep="\t", compression="gzip", header=False, float_format="%.2f")

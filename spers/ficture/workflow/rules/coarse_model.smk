@@ -29,9 +29,11 @@ rule coarse_model_fit:
 rule coarse_hex_plot:
     input:
         fit = targets["coarse_fit"],
-        hex = targets["coarse_hex"]
+        hex = targets["coarse_hex"],
+        trn = targets["transcripts"]
     output:
-        targets["coarse_plt"]
+        png = targets["coarse_png"],
+        svg = targets["coarse_svg"]
     params:
         params=config["coarse_plot"]
     log:

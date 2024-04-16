@@ -8,49 +8,32 @@ import numpy as np
 import pandas as pd
 
 
-def read_input(infile):
-    """
-    Read in TSV file into a pandas DF
-
-    :param infile: filepath (str) of TSV.gz
-    :return: pandas dataframe
-    """
-    if infile.endswith(".gz"):
-        df = pd.read_csv(infile, sep="\t", compression="gzip")
-    else:
-        df = pd.read_csv(infile, sep="\t")
-    return df
-
-
 def calculate_gene_weights(df):
     """
     Calculate weighting for all genes
-    :param df: pandas dataframe long format
-    :return: pandas dataframe with ["gene", "Count", "Weight"]
+    :param df: pandas dataframe ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
+    :return: pandas dataframe with ["gene", "Weight"]
     """
-    gene_weights = df.groupby(by=["gene"]).agg({"Count": "sum"}).reset_index()
+    gene_weights = df.groupby("gene").size().reset_index()
+    gene_weights.columns = ["gene", "Count"]
     gene_weights["Weight"] = gene_weights.Count * 1. / gene_weights.Count.sum()
-    return gene_weights
+    return gene_weights[["gene","Weight"]]
 
 
 def df_to_mtx(df):
     """
     Convert pandas dataframe to matrix
 
-    :param df: pandas input long dataframe ["random_index", "X", "Y", "gene", "Count", "xbin", "ybin"]
+    :param df: pandas input long dataframe ["hex_id", "gene", ...]
     :return: pandas wide dataframe [cols=gene, rows=hex_id, values=sum(Count)]
     """
-    # Add hex bin IDs
-    df["hex_id"] = df["xbin"].astype(str) + ":" + df["ybin"].astype(str)
 
-    # Drop unneeded columns
-    df = df[["hex_id", "gene", "Count"]]
-
-    # Aggregate counts
-    df = df.groupby(["hex_id", "gene"]).sum()
+    # collapse hex gene counts
+    df = df.groupby(["hex_id", "gene"]).size().reset_index()
+    df.columns = ["hex_id", "gene", "count"]
 
     # Pivot wide
-    df = df.pivot_table(index="hex_id", columns="gene", values="Count", aggfunc="sum", fill_value=0)
+    df = df.pivot_table(index="hex_id", columns="gene", values="count", aggfunc="sum", fill_value=0)
 
     # Return dataframe
     return df
@@ -96,8 +79,8 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
     Train and select lda
 
     :param mtx: pandas dataframe wide matrix (cols=gene, rows=hex_id)
-    :param hex_bins: pandas daraframe long format from input
-    :param hex_batches: pandas dataframe of ["hex_id", "random_index"]
+    :param hex_bins: pandas daraframe from input ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
+    :param hex_batches: pandas dataframe of ["hex_id", "minibatch_id"]
     :param params: parameters passed from config
     :return:
     """
@@ -197,8 +180,8 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
     best_model = model_results[coherence_scores.index[0]]["model"]
 
     # refine with minibatches
-    for minibatch_id in np.unique(hex_batches.random_index):
-        batch_hex_ids = hex_batches[hex_batches.random_index==minibatch_id].hex_id
+    for minibatch_id in np.unique(hex_batches.minibatch_id):
+        batch_hex_ids = hex_batches[hex_batches.minibatch_id==minibatch_id].hex_id
         batch_mtx = mtx[mtx.index.isin(batch_hex_ids)]
         batch_mtx = sparse.coo_array(batch_mtx).tocsr()
         _ = best_model.partial_fit(batch_mtx)
@@ -268,10 +251,10 @@ def main(params=None, **kwargs):
     logging.basicConfig(filename=kwargs["log_file"], filemode="w", level=logging.DEBUG)
 
     logging.debug("Reading in hex binned transcripts")
-    hex_binned = read_input(kwargs["in_hex"])
+    hex_binned = pd.read_csv(kwargs["in_hex"], sep="\t", compression="gzip")
 
     logging.debug("Reading in hex bin batches")
-    hex_batches = read_input(kwargs["in_bch"])
+    hex_batches = pd.read_csv(kwargs["in_bch"], sep="\t", compression="gzip")
 
     logging.debug("Reformatting the dataframe")
     hex_mtx = df_to_mtx(hex_binned)
