@@ -1,7 +1,7 @@
 spers:
     ficture:
         cosmx:
-            mu_scale: 10
+            mu_scale: 8
             headers:
                 x: x_global_px
                 y: y_global_px
@@ -20,7 +20,7 @@ spers:
             batch_buff: 30
         coarse_hex:
             hex_width: 16
-            min_transcripts_per_hex: 50
+            min_transcripts_per_hex: 30
             min_transcripts_per_gene: 50
             min_transcripts_per_minibatch: 50
         coarse_model:
@@ -28,7 +28,7 @@ spers:
             generate_models: 5
             output_models: 5
             random_state: 555
-            min_transcripts_scored: 100
+            min_transcripts_scored: 50
             lda:
                 n_components: 12
                 learning_method: online

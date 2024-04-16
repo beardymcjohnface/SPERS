@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.utils import shuffle
 
 
-def plot_coarse_hex(fit_df, hex_df, transcripts_df, out_png, out_svg, **params):
+def plot_coarse_hex(fit_df, hex_df, transcripts_df, out_png, **params):
     """
     Generate a seaborn plot object for coarse scored transcripts
     :param fit_df: pandas dataframe of fit results ["hex_id", "topK"]
@@ -43,7 +43,7 @@ def plot_coarse_hex(fit_df, hex_df, transcripts_df, out_png, out_svg, **params):
     coarse_plot.set_ylabel("Y (microns)")
 
     plt.savefig(out_png)
-    plt.savefig(out_svg)
+    # plt.savefig(out_svg)
 
 
 def main(params=None, **kwargs):
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         in_hex=snakemake.input.hex,
         in_trn=snakemake.input.trn,
         out_png=snakemake.output.png,
-        out_svg=snakemake.output.svg,
+        # out_svg=snakemake.output.svg,
         log_file=snakemake.log[0],
         threads=snakemake.threads,
         params=snakemake.params.params

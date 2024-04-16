@@ -7,7 +7,7 @@ from sklearn.utils import shuffle
 from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
 
 
-def plot_transcripts(plot_df, out_png, out_svg, **params):
+def plot_transcripts(plot_df, out_png, **params):
 
     # Get scale for output plot
     x_scale = (plot_df["x"].max() - plot_df["x"].min()) / params["microns_per_inch"]
@@ -33,7 +33,7 @@ def plot_transcripts(plot_df, out_png, out_svg, **params):
     coarse_plot.set_ylabel("Y (microns)")
 
     plt.savefig(out_png)
-    plt.savefig(out_svg)
+    # plt.savefig(out_svg)
 
 
 def main(in_scr=None, in_trn=None, out_png=None, out_svg=None, log_file=None, params=None):
@@ -66,7 +66,7 @@ if __name__ == "__main__":
         in_scr=snakemake.input.scr,
         in_trn=snakemake.input.trn,
         out_png=snakemake.output.png,
-        out_svg=snakemake.output.svg,
+        # out_svg=snakemake.output.svg,
         log_file=snakemake.log[0],
         params=snakemake.params.params
     )

@@ -22,7 +22,7 @@ rule plot_scored_transcripts:
         trn = targets["transcripts"]
     output:
         png = targets["scored_png"],
-        svg = targets["scored_svg"]
+        # svg = targets["scored_svg"]
     params:
         params=config["transcript_plot"]
     log:

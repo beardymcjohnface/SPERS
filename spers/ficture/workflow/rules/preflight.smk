@@ -33,12 +33,12 @@ targets = {
     "coarse_mtx": os.path.join(dirs["coarse"], "matrix.tsv.gz"),
     "coarse_mdl": os.path.join(dirs["coarse"], "model.pkl"),
     "coarse_png": os.path.join(dirs["coarse"], "plot.png"),
-    "coarse_svg": os.path.join(dirs["coarse"], "plot.svg"),
+    # "coarse_svg": os.path.join(dirs["coarse"], "plot.svg"),
 
     # Overlap rescore files
     "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.tsv.gz"),
     "scored_png": os.path.join(dirs["rescore"], "plot.png"),
-    "scored_svg": os.path.join(dirs["rescore"], "plot.svg")
+    # "scored_svg": os.path.join(dirs["rescore"], "plot.svg")
 }
 
 

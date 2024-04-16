@@ -33,7 +33,7 @@ rule coarse_hex_plot:
         trn = targets["transcripts"]
     output:
         png = targets["coarse_png"],
-        svg = targets["coarse_svg"]
+        # svg = targets["coarse_svg"]
     params:
         params=config["coarse_plot"]
     log:
