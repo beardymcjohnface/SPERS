@@ -36,7 +36,7 @@ def plot_transcripts(plot_df, out_png, **params):
     # plt.savefig(out_svg)
 
 
-def main(in_scr=None, in_trn=None, out_png=None, out_svg=None, log_file=None, params=None):
+def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None):
     logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
 
     logging.debug("Reading in transcript coords")
@@ -58,7 +58,7 @@ def main(in_scr=None, in_trn=None, out_png=None, out_svg=None, log_file=None, pa
     transcripts_df = transcripts_df[transcripts_df["hex_id"].isin(hex_filter)]
 
     logging.debug("Plotting scored transcripts")
-    plot_transcripts(transcripts_df, out_png, out_svg, **params)
+    plot_transcripts(transcripts_df, out_png, **params)
 
 
 if __name__ == "__main__":

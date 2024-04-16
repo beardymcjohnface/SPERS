@@ -59,7 +59,7 @@ def main(params=None, **kwargs):
     transcript_df = pd.read_csv(kwargs["in_trn"], sep="\t", compression="gzip", usecols=["transcript_id", "x", "y"])
 
     logging.debug("Plotting coarse-scored transcripts")
-    plot_coarse_hex(fit_df, hex_df, transcript_df, kwargs["out_png"], kwargs["out_svg"], **params)
+    plot_coarse_hex(fit_df, hex_df, transcript_df, kwargs["out_png"], **params)
 
 
 if __name__ == "__main__":
