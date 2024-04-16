@@ -33,8 +33,8 @@ def read_transcripts(in_csv, params):
     # df = df.sort_values(by="y")
 
     # Rescale Xy offset to zero
-    df["y"] -= df["y"].min()
-    df["x"] -= df["x"].min()
+    # df["y"] -= df["y"].min()
+    # df["x"] -= df["x"].min()
 
     # Rescale into um
     df["x"] /= params["mu_scale"]
