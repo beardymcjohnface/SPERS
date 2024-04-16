@@ -157,6 +157,42 @@ def ficture(**kwargs):
     )
 
 
+@click.command(
+    epilog=help_msg_extra,
+    context_settings=dict(
+        help_option_names=["-h", "--help"], ignore_unknown_options=True
+    ),
+)
+@common_options
+@click.option("--configfile",
+              default=os.path.join("ficture", "config.yaml"),
+              show_default=False,
+              callback=default_to_output,
+              help="Custom config file [default: (outputDir)/ficture/config.yaml]",)
+@click.option("--system-config", default=snake_base(os.path.join("ficture", "config", "config.yaml")), hidden=True, )
+@click.option("--log",
+              default=os.path.join("ficture", "spers.ficture.log"),
+              callback=default_to_output,
+              hidden=True)
+def ficture_test(**kwargs):
+    """Run ficture test on xenium slice"""
+    merge_config = {
+        "spers": {
+            "args": {
+                "input": snake_base(os.path.join("ficture", "test_data", "xenium.smol.csv.gz")),
+                "platform": "xenium"
+            }
+        }
+    }
+
+    run_snakemake(
+        snakefile_path=snake_base(os.path.join("ficture", "workflow", "Snakefile")),
+        merge_config=merge_config,
+        **kwargs
+    )
+
+
+
 @click.command()
 def citation(**kwargs):
     """Print the citation(s)"""
@@ -164,6 +200,7 @@ def citation(**kwargs):
 
 
 cli.add_command(ficture)
+cli.add_command(ficture_test)
 cli.add_command(citation)
 
 

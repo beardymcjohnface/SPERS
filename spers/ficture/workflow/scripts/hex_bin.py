@@ -106,11 +106,7 @@ def filter_bins_min_count(df, min_transcripts_per_hex=None):
 
 
 def main(infile=None, outfile=None, log_file=None, params=None):
-    file_handler = logging.FileHandler(filename=log_file)
-    stdout_handler = logging.StreamHandler(stream=sys.stdout)
-    handlers = [file_handler, stdout_handler]
-
-    logging.basicConfig(handlers=handlers,level=logging.DEBUG)
+    logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
 
     logging.debug("Reading input transcripts: " + str(infile))
     transcripts_df = pd.read_csv(infile, sep="\t", compression="gzip")

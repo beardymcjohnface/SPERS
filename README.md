@@ -36,6 +36,16 @@ spers ficture --input transcripts.csv.gz --platform xenium
 spers ficture --input transcripts.csv.gz --platform cosmx
 ```
 
+__Run the test dataset__
+```shell
+spers ficture-test
+```
+
 __Current steps covered:__
-- csv_to_tsv
-- make_spatial_minibatch
+- Convert CosMX or Xenium CSV to TSV
+- Hex binning
+- Minibatch binning for model training
+- Model generation
+- Trained model plot
+- Transcript rescoring (with overlapping hex bins)
+- Final plot
