@@ -7,14 +7,14 @@ from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
 from spers.ficture.workflow.scripts.coarse_model_fit import df_to_mtx
 
 
-def iterate_and_score(df, lda_model, hex_width=None, n_steps=None, step_size=None, **params):
+def iterate_and_score(df, lda_model, hex_width=None, offset_steps=None, step_size=None, **params):
     """
     Generate offset hex bins and score with model
 
     :param df: pandas dataframe ["transcript_id", "x", "y", "gene"]
     :param lda_model: pickle of trained LDA model
     :param hex_width: int width of hex bins
-    :param n_steps: int number of X/Y offset steps
+    :param offset_steps: list int offset X/Y steps to perform
     :param step_size: int size of X/Y offset steps
     :param params:
     :return: pandas dataframe ["transcript_id", "best_hex_id", "best_topK", "best_topP"]
@@ -28,9 +28,9 @@ def iterate_and_score(df, lda_model, hex_width=None, n_steps=None, step_size=Non
     out_df["best_topP"] = 0
 
     # Iterate offset steps
-    for x_step in range(n_steps):
+    for x_step in offset_steps:
         x_offset = x_step * step_size
-        for y_step in range(n_steps):
+        for y_step in offset_steps:
             y_offset = y_step * step_size
 
             # Generate hex bins for offset combination

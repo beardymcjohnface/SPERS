@@ -178,12 +178,11 @@ def ficture_test(**kwargs):
     """Run ficture test on xenium slice"""
     merge_config = {
         "spers": {
-            "args": {
-                "input": snake_base(os.path.join("ficture", "test_data", "xenium.smol.csv.gz")),
-                "platform": "xenium"
-            }
+            "args": kwargs
         }
     }
+    merge_config["spers"]["args"]["input"] = snake_base(os.path.join("ficture", "test_data", "xenium.smol.csv.gz"))
+    merge_config["spers"]["args"]["platform"] = "xenium"
 
     run_snakemake(
         snakefile_path=snake_base(os.path.join("ficture", "workflow", "Snakefile")),
