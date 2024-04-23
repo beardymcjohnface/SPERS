@@ -76,8 +76,8 @@ def transcript_to_hex_bins(df, x_offset=0, y_offset=0, hex_width=None, **params)
 
     # create hex bin IDs for counting and filtering
     logging.debug("Creating hex IDs")
-    # TODO: abandon this format of hex_id? is slow
-    df["hex_id"] = df["xbin"].astype(str) + "_" + df["ybin"].astype(str) + "_" + str(x_offset) + "_" + str(y_offset)
+    df["hex_id"] = df.groupby(["xbin", "ybin"]).ngroup()
+
 
     logging.debug("Done")
     return df

@@ -20,10 +20,10 @@ targets = {
     # "transcript_counts": os.path.join(dirs["results"], "transcript_counts.tsv.gz"),
 
     # Preprocessing
-    "batched_matrix": os.path.join(dirs["results"], "transcripts.batched.matrix.tsv.gz"),
+    # "batched_matrix": os.path.join(dirs["results"], "transcripts.batched.matrix.tsv.gz"),
 
     # Coarse hexagon transcript bins
-    "coarse_hex": os.path.join(dirs["results"], "transcripts.coarse_hex.tsv.gz"),
+    # "coarse_hex": os.path.join(dirs["results"], "transcripts.coarse_hex.tsv.gz"),
 
     # Coarse model files
     "coarse_fit": os.path.join(dirs["coarse"], "fit.tsv.gz"),

@@ -1,7 +1,6 @@
 rule coarse_model_fit:
     input:
-        hex = targets["coarse_hex"],
-        bch = targets["batched_matrix"]
+        tsv = targets["transcripts"],
     output:
         fit = targets["coarse_fit"],
         res = targets["coarse_res"],
@@ -29,8 +28,7 @@ rule coarse_model_fit:
 rule coarse_hex_plot:
     input:
         fit = targets["coarse_fit"],
-        hex = targets["coarse_hex"],
-        trn = targets["transcripts"]
+        # trn = targets["transcripts"]
     output:
         png = targets["coarse_png"],
         # svg = targets["coarse_svg"]

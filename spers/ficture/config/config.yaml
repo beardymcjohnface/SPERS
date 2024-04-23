@@ -15,15 +15,13 @@ spers:
                 y: y_location
                 gene: feature_name
             gene_filter: "Control|Neg|Unassigned"
-        minibatch:
+        coarse_model:
             batch_size: 500
             batch_buff: 30
-        coarse_hex:
-            hex_width: 12
+            hex_width: 16
             min_transcripts_per_hex: 50
             min_transcripts_per_gene: 50
             min_transcripts_per_minibatch: 50
-        coarse_model:
             test_split: 0.5
             generate_models: 5
             output_models: 5
@@ -37,38 +35,30 @@ spers:
                 learning_decay: 0.7
                 doc_topic_prior: 1
         coarse_plot:
-            transcripts_per_hex: 10
-            palette: dark
-            background: white
-            microns_per_inch: 150
-            point_scale: 2.5
+            palette: Spectral
+            background: black
+            microns_per_inch: 100
             font_scale: 5
+            point_scale: 60
         transcript_score:
             hex_width: 12
-            offset_steps: [ -2, -1, 0, 1, 2]
-            step_size: 4
+            offset_steps: [-1, 0, 1]
+            step_size: 6
         transcript_plot:
             hex_width: 12
             min_transcripts_per_hex: 0
             transcripts_per_hex: 100
-            palette: dark
-            background: white
+            plot_top_n_factors: 12
+            palette: Spectral
+            background: black
             microns_per_inch: 50
             point_scale: 1
-            font_scale: 5
+            font_scale: 10
     resources:
         big:
             mem: "64G"
-            cpu: 32
-            time: "24:00:00"
-        med:
-            mem: "16G"
             cpu: 8
-            time: "04:00:00"
-        sml:
-            mem: "2G"
-            cpu: 1
-            time: "01:00:00"
+            time: "24:00:00"
         ram:
             mem: "16G"
             cpu: 2

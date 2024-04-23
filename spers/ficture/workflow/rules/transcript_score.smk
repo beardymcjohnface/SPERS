@@ -6,6 +6,11 @@ rule score_overlapped_hex_bins:
         targets["overlapped_hex_scores"]
     params:
         params = config["transcript_score"]
+    threads:
+        config["resources"]["big"]["cpu"]
+    resources:
+        mem=config["resources"]["big"]["mem"],
+        time=config["resources"]["big"]["time"]
     log:
         os.path.join(dirs["logs"], "score_overlapped_hex_bins.txt")
     benchmark:

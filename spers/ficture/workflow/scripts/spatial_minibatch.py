@@ -1,20 +1,5 @@
-import logging, gzip
-import numpy as np
+import logging
 import pandas as pd
-
-
-def read_input(infile):
-    """
-    Read in the transcripts TSV file into a pandas DF
-
-    :param infile: filepath (str) of transcripts TSV
-    :return: pandas dataframe
-    """
-    if infile.endswith(".gz"):
-        df = pd.read_csv(infile, sep="\t", compression="gzip")
-    else:
-        df = pd.read_csv(infile, sep="\t")
-    return df
 
 
 def batch_dimensions(df, **params):
@@ -45,23 +30,15 @@ def batch_dimensions(df, **params):
     return params
 
 
-def minibatch_transcripts(df, file, **params):
+def minibatch_transcripts(df, **params):
     """
     Create batches for transcripts based on batch dimensions
 
     :param df: transcripts pandas dataframe ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
     :param file: output file path (str)
     :param params: dict config params
-    :return: None
+    :return: list of hex_ids for minibatch
     """
-    
-    # Write header to output file
-    header = ["minibatch_id", "hex_id"]
-    with gzip.open(file, "wt") as wf:
-        wf.write("\t".join(header) + "\n")
-
-    # Generate random integers for batch IDs
-    rand_ints = set(np.random.randint(1000000000, size=1000000))
 
     # Iterate x and y steps and batch on the fly
     x_start = params["x_min"]
@@ -73,11 +50,8 @@ def minibatch_transcripts(df, file, **params):
             df_slice = df[(df.xbin >= x_start) & (df.xbin <= x_start + params["x_step"] + params["batch_buff"]) &
                           (df.ybin >= y_start) & (df.ybin <= y_start + params["y_step"] + params["batch_buff"])]
 
-            # Add random index for the batch
-            df_slice["minibatch_id"] = rand_ints.pop()
-
-            # Append the slice to the output file
-            df_slice[header].drop_duplicates().to_csv(file, mode="a", sep="\t", compression="gzip", header=False, float_format="%.2f")
+            # Return the slice
+            yield pd.unique(df_slice["hex_id"])
 
             y_start += params["y_step"]
         x_start += params["x_step"]
@@ -88,7 +62,7 @@ def main(infile=None, outfile=None, log_file=None, params=None):
     logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
 
     logging.debug("Reading input transcripts: " + str(infile))
-    transcripts_df = read_input(infile)
+    transcripts_df = pd.read_csv(infile, sep="\t", compression="gzip")
 
     logging.debug("Calculating minibatch dimensions")
     params = batch_dimensions(transcripts_df, **params)

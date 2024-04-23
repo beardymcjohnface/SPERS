@@ -1,4 +1,4 @@
-import logging, sys
+import logging
 import pandas as pd
 import seaborn
 import matplotlib.pyplot as plt
@@ -19,6 +19,13 @@ def plot_transcripts(plot_df, out_png, **params):
         rc={'axes.facecolor': params["background"], 'figure.facecolor': params["background"], 'axes.grid': False},
         font_scale=params["font_scale"])
 
+    # Hue order by factor size
+    hue_order = list(plot_df.groupby("topK").size().sort_values(ascending=False).head(params["plot_top_n_factors"] - 1).index)
+
+    # Top n factors
+    plot_df.loc[~plot_df["topK"].isin(hue_order), "topK"] = params["plot_top_n_factors"]
+
+    # Plot
     coarse_plot = seaborn.scatterplot(
         shuffle(plot_df).groupby("hex_id").head(params["transcripts_per_hex"]),
         x="x",
@@ -26,6 +33,7 @@ def plot_transcripts(plot_df, out_png, **params):
         hue="topK",
         s=params["point_scale"],
         palette=params["palette"],
+        hue_order=hue_order,
         edgecolor=None)
 
     coarse_plot.legend([],[], frameon=False)
@@ -43,7 +51,7 @@ def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None):
     transcripts_df = pd.read_csv(in_trn, sep="\t", compression="gzip", usecols=["transcript_id", "x", "y"])
 
     logging.debug("Reading in transcript scores")
-    scores_df = pd.read_csv(in_scr, sep="\t", compression="gzip", usecols=["transcript_id", "best_topK"])
+    scores_df = pd.read_csv(in_scr, sep="\t", compression="gzip", usecols=["transcript_id", "topK"])
 
     logging.debug("Joining transcript classifications")
     scores_df.columns = ["transcript_id", "topK"]

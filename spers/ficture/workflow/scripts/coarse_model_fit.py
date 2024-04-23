@@ -7,11 +7,14 @@ from sklearn.decomposition import LatentDirichletAllocation as LDA
 import numpy as np
 import pandas as pd
 
+import spers.ficture.workflow.scripts.hex_bin as hex_bin
+import spers.ficture.workflow.scripts.spatial_minibatch as minibatch
+
 
 def calculate_gene_weights(df):
     """
     Calculate weighting for all genes
-    :param df: pandas dataframe ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
+    :param df: pandas dataframe ["gene", ...]
     :return: pandas dataframe with ["gene", "Weight"]
     """
     gene_weights = df.groupby("gene").size().reset_index()
@@ -74,13 +77,12 @@ def chisq(k,info,total_k,total_umi):
     return res
 
 
-def train_select_lda(mtx, hex_bins, hex_batches, **params):
+def train_select_lda(mtx, transcripts_df, **params):
     """
     Train and select lda
 
     :param mtx: pandas dataframe wide matrix (cols=gene, rows=hex_id)
-    :param hex_bins: pandas daraframe from input ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
-    :param hex_batches: pandas dataframe of ["hex_id", "minibatch_id"]
+    :param transcripts_df: pandas long daraframe  ["hex_id", "transcript_id", "xbin", "ybin", "gene", ...]
     :param params: parameters passed from config
     :return:
     """
@@ -96,7 +98,7 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
 
     # Need the gene weights
     logging.debug("Calculating gene weights")
-    gene_weights = calculate_gene_weights(hex_bins)
+    gene_weights = calculate_gene_weights(transcripts_df)
 
     # misc params
     factor_header = list(np.arange(params["lda"]["n_components"]).astype(str))
@@ -172,6 +174,7 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
         model_results[r] = {"score_train": score_train, "score_test": score_test, "model": model, "coherence": score}
 
     # Save results
+    logging.debug("Saving model results and coherence scores")
     pickle.dump(model_results, open(params["out_res"], "wb"))
     coherence_scores = pd.DataFrame(coherence_scores, columns=["R", "K", "Score0", "Score"])
     coherence_scores.to_csv(params["out_coh"], sep="\t", index=False)
@@ -180,11 +183,12 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
     best_model = model_results[coherence_scores.index[0]]["model"]
 
     # refine with minibatches
-    for minibatch_id in np.unique(hex_batches.minibatch_id):
-        batch_hex_ids = hex_batches[hex_batches.minibatch_id==minibatch_id].hex_id
-        batch_mtx = mtx[mtx.index.isin(batch_hex_ids)]
+    logging.debug("Refining best model with minibatches")
+    for minibatch_hex_ids in minibatch.minibatch_transcripts(transcripts_df, **params):
+        batch_mtx = mtx[mtx.index.isin(minibatch_hex_ids)]
         batch_mtx = sparse.coo_array(batch_mtx).tocsr()
-        _ = best_model.partial_fit(batch_mtx)
+        if batch_mtx.shape[0] > 1:
+            _ = best_model.partial_fit(batch_mtx)
 
     # Relabel factors
     weight = best_model.components_.sum(axis=1)
@@ -207,7 +211,7 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
     fit_result["Count"] = np.sum(mtx_csr, axis=1)
 
     # Merge hex bin coords
-    hex_bin_coords = hex_bins[["hex_id","xbin","ybin"]]
+    hex_bin_coords = transcripts_df[["hex_id","xbin","ybin"]]
     hex_bin_coords = hex_bin_coords.drop_duplicates().set_index("hex_id")
     fit_result = pd.concat([fit_result, hex_bin_coords], axis=1, join="inner").reset_index()
     fit_result = fit_result.rename(columns={"xbin":"x", "ybin":"y"})
@@ -249,29 +253,38 @@ def train_select_lda(mtx, hex_bins, hex_batches, **params):
 
 def main(params=None, **kwargs):
     logging.basicConfig(filename=kwargs["log_file"], filemode="w", level=logging.DEBUG)
+    # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
-    logging.debug("Reading in hex binned transcripts")
-    hex_binned = pd.read_csv(kwargs["in_hex"], sep="\t", compression="gzip")
+    logging.debug("Reading transcripts")
+    transcripts_df = pd.read_csv(kwargs["in_tsv"], sep="\t", compression="gzip")
 
-    logging.debug("Reading in hex bin batches")
-    hex_batches = pd.read_csv(kwargs["in_bch"], sep="\t", compression="gzip")
+    logging.debug("Filtering low count genes")
+    transcripts_df = hex_bin.filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["min_transcripts_per_gene"])
+
+    logging.debug("Calculating hex bins")
+    transcripts_df = hex_bin.transcript_to_hex_bins(transcripts_df, x_offset=0, y_offset=0, hex_width=params["hex_width"])
+
+    logging.debug("Filtering low count hex bins")
+    transcripts_df = hex_bin.filter_bins_min_count(transcripts_df, min_transcripts_per_hex=params["min_transcripts_per_hex"])
+
+    logging.debug("Initialising minibatch parameters")
+    params = minibatch.batch_dimensions(transcripts_df, **params)
 
     logging.debug("Reformatting the dataframe")
-    hex_mtx = df_to_mtx(hex_binned)
+    hex_mtx = df_to_mtx(transcripts_df)
     params["total_samples"], _ = hex_mtx.shape
 
     # TODO: add in options for log normalisation
 
     logging.debug("Iterative running LatentDirichletAllocation")
-    train_select_lda(hex_mtx, hex_binned, hex_batches, **kwargs, **params)
+    train_select_lda(hex_mtx, transcripts_df, **kwargs, **params)
 
 
 
 
 if __name__ == "__main__":
     main(
-        in_hex=snakemake.input.hex,
-        in_bch=snakemake.input.bch,
+        in_tsv=snakemake.input.tsv,
         out_fit=snakemake.output.fit,
         out_res=snakemake.output.res,
         out_coh=snakemake.output.coh,
