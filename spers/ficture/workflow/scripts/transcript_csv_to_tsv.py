@@ -12,9 +12,9 @@ def read_transcripts(in_csv, params):
     """
     # Read in file
     if in_csv.endswith(".gz"):
-        df = pd.read_csv(in_csv, compression="gzip")
+        df = pd.read_csv(in_csv, compression="gzip", sep="," if in_csv.endswith(".csv.gz") else "\t")
     else:
-        df = pd.read_csv(in_csv)
+        df = pd.read_csv(in_csv, sep="," if in_csv.endswith(".csv.gz") else "\t")
 
     # Remove unnecessary columns and rename
     df = df[list(params["headers"].values())]
@@ -23,18 +23,11 @@ def read_transcripts(in_csv, params):
     # Add transcript index if missing
     if "transcript_id" not in params["headers"]:
         df["transcript_id"] = df.index
-        df["transcript_id"] = df["transcript_id"].astype(str).str.zfill(15)
+        df["transcript_id"] = df["transcript_id"].astype(str)
 
     # Filter junk rows
-    df = df[~df["gene"].str.contains(params["gene_filter"])]
-
-    # # Group and sort - add counts
-    # df = df.groupby(["x", "y", "gene"]).size().reset_index(name="Count")
-    # df = df.sort_values(by="y")
-
-    # Rescale Xy offset to zero
-    # df["y"] -= df["y"].min()
-    # df["x"] -= df["x"].min()
+    if "gene_filter" in params:
+        df = df[~df["gene"].str.contains(params["gene_filter"])]
 
     # Rescale into um
     df["x"] /= params["mu_scale"]

@@ -130,7 +130,7 @@ Available targets:
     ),
 )
 @click.option("--input", help="Input file/directory", type=str, required=True)
-@click.option("--platform", help="Spatialomics platform", default="xenium", show_default=True, type=click.Choice(["xenium", "cosmx"]))
+@click.option("--platform", help="Spatialomics platform", default="xenium", show_default=True, type=click.Choice(["xenium", "cosmx", "ficture"]))
 @common_options
 @click.option("--configfile",
               default=os.path.join("ficture", "config.yaml"),

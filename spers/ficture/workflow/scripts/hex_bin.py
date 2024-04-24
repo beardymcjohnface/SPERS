@@ -1,6 +1,5 @@
-import logging, math, sys
+import logging, math
 import numpy as np
-import pandas as pd
 
 
 def filter_min_transcripts_gene(df, min_transcripts_per_gene=None):
@@ -103,38 +102,3 @@ def filter_bins_min_count(df, min_transcripts_per_hex=None):
 
     # Drop unused columns and return
     return df
-
-
-def main(infile=None, outfile=None, log_file=None, params=None):
-    logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
-
-    logging.debug("Reading input transcripts: " + str(infile))
-    transcripts_df = pd.read_csv(infile, sep="\t", compression="gzip")
-
-    if "min_transcripts_per_gene" in params.keys():
-        logging.debug("Filtering low count genes")
-        transcripts_df = filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["min_transcripts_per_gene"])
-
-    logging.debug("Hex binning the transcripts")
-    transcripts_df = transcript_to_hex_bins(transcripts_df, **params)
-
-    if "min_transcripts_per_hex" in params.keys():
-        logging.debug("Filtering hex bins")
-        transcripts_df = filter_bins_min_count(
-            transcripts_df,
-            min_transcripts_per_hex=params["min_transcripts_per_hex"]
-        )
-
-    logging.debug("Writing output file")
-    # TODO: don't write the hex bins, just calculate them as needed, writing is the bottleneck
-    # pickle.dump(transcripts_df, open(outfile, "wb"))
-    transcripts_df.to_csv(outfile, sep="\t", index=False, float_format="%.2f", compression="gzip")
-
-
-if __name__ == "__main__":
-    main(
-        infile=snakemake.input[0],
-        outfile=snakemake.output[0],
-        log_file=snakemake.log[0],
-        params=snakemake.params.params
-    )

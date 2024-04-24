@@ -9,7 +9,7 @@ config.update(config["spers"]["ficture"])
 # Rules files
 include: os.path.join(workflow.basedir, "rules", "preflight.smk")
 include: os.path.join(workflow.basedir, "rules", "preprocessing.smk")
-include: os.path.join(workflow.basedir, "rules", "coarse_model.smk")
+include: os.path.join(workflow.basedir, "rules", "generate_lda_model.smk")
 include: os.path.join(workflow.basedir, "rules", "transcript_score.smk")
 
 

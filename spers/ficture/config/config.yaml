@@ -15,18 +15,26 @@ spers:
                 y: y_location
                 gene: feature_name
             gene_filter: "Control|Neg|Unassigned"
-        coarse_model:
-            batch_size: 500
-            batch_buff: 30
-            hex_width: 16
-            min_transcripts_per_hex: 50
-            min_transcripts_per_gene: 50
-            min_transcripts_per_minibatch: 50
-            test_split: 0.5
-            generate_models: 5
-            output_models: 5
+        ficture:
+            mu_scale: 1
+            headers:
+                gene: gene
+                x: X
+                y: Y
+        lda_model:
             random_state: 555
-            min_transcripts_scored: 50
+            bin:
+                hex_width: 16
+                batch_size: 500
+                batch_buff: 30
+                min_transcripts_per_hex: 50
+                min_transcripts_per_gene: 50
+                min_transcripts_per_minibatch: 50
+            train:
+                test_split: 0.5
+                generate_models: 5
+                output_models: 5
+                min_transcripts_scored: 50
             lda:
                 n_components: 12
                 learning_method: online
@@ -34,26 +42,19 @@ spers:
                 learning_offset: 9
                 learning_decay: 0.7
                 doc_topic_prior: 1
-        coarse_plot:
-            palette: Spectral
-            background: black
-            microns_per_inch: 100
-            font_scale: 5
-            point_scale: 60
         transcript_score:
-            hex_width: 12
-            offset_steps: [-1, 0, 1]
-            step_size: 6
-        transcript_plot:
-            hex_width: 12
-            min_transcripts_per_hex: 0
-            transcripts_per_hex: 100
-            plot_top_n_factors: 12
+            grid_score:
+                hex_width: 12
+                offset_steps: [-1, 0, 1]
+                step_size: 6
+            filter:
+                min_transcripts_per_hex: 10
+                max_transcripts_per_hex: 100
+        plot:
+            microns_per_inch: 150
             palette: Spectral
             background: black
-            microns_per_inch: 50
-            point_scale: 1
-            font_scale: 10
+            plot_top_n_factors: 12
     resources:
         big:
             mem: "64G"
