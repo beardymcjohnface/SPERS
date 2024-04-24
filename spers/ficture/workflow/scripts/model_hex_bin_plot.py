@@ -15,7 +15,7 @@ def main(plot=None, hex_width=None, **kwargs):
         fit_df,
         kwargs["out_png"],
         font_scale=0.1,
-        point_scale=hex_width * 0.1,
+        point_scale=hex_width**2 * 0.9,
         **plot
     )
 

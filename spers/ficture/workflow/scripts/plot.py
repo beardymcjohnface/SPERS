@@ -27,7 +27,7 @@ def plot_ficture(
 
     # Get the font and point scales
     plot_font_scale = max(x_scale, y_scale) * font_scale
-    plot_point_scale = max(x_scale, y_scale) * point_scale
+    plot_point_scale = point_scale
 
     # Hue order by factor size
     hue_order = list(
