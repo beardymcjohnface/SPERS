@@ -24,17 +24,17 @@ def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plo
 
     logging.debug("Filtering low transcript bins")
     hex_counts = transcripts_df.groupby("hex_id").size()
-    hex_filter = {k for k,v in hex_counts.items() if v >= params["filter"]["min_transcripts_per_hex"]}
+    hex_filter = {k for k,v in hex_counts.items() if v >= params["plot_filter"]["min_transcripts_per_hex"]}
     transcripts_df = transcripts_df[transcripts_df["hex_id"].isin(hex_filter)]
 
-    logging.debug("Downsampling transcripts for plotting")
-    transcripts_df = shuffle(transcripts_df).groupby("hex_id").head(params["filter"]["max_transcripts_per_hex"])
+    logging.debug("Down-sampling transcripts for plotting")
+    transcripts_df = shuffle(transcripts_df).groupby("hex_id").head(params["plot_filter"]["max_transcripts_per_hex"])
 
     logging.debug("Plotting scored transcripts")
     plot_ficture(
         transcripts_df,
         out_png,
-        point_scale = 0.00001,
+        point_scale = 0.01,
         font_scale = 0.1,
         **plot)
 

@@ -5,8 +5,8 @@ dirs = {
     "bench": os.path.join(config["args"]["output"], "ficture", "bench"),
     "temp": os.path.join(config["args"]["output"], "ficture", "temp"),
     "results": os.path.join(config["args"]["output"], "ficture", "results"),
-    "coarse": os.path.join(config["args"]["output"], "ficture", "results", "coarse_model"),
-    "rescore": os.path.join(config["args"]["output"], "ficture", "results", "overlap_rescore"),
+    "model": os.path.join(config["args"]["output"], "ficture", "results", "lda_model"),
+    "rescore": os.path.join(config["args"]["output"], "ficture", "results", "scored_transcripts"),
     "envs": os.path.join(workflow.basedir, "envs"),
     "scripts": os.path.join(workflow.basedir, "scripts")
 }
@@ -16,29 +16,19 @@ dirs = {
 targets = {
     # Convert to ficture TSV format
     "transcripts": os.path.join(dirs["results"], "transcripts.tsv.gz"),
-    # "transcript_minmax": os.path.join(dirs["results"], "transcript_minmax.tsv"),
-    # "transcript_counts": os.path.join(dirs["results"], "transcript_counts.tsv.gz"),
 
-    # Preprocessing
-    # "batched_matrix": os.path.join(dirs["results"], "transcripts.batched.matrix.tsv.gz"),
-
-    # Coarse hexagon transcript bins
-    # "coarse_hex": os.path.join(dirs["results"], "transcripts.coarse_hex.tsv.gz"),
-
-    # Coarse model files
-    "coarse_fit": os.path.join(dirs["coarse"], "fit.tsv.gz"),
-    "coarse_res": os.path.join(dirs["coarse"], "results.pkl"),
-    "coarse_coh": os.path.join(dirs["coarse"], "coherence.tsv.gz"),
-    "coarse_pos": os.path.join(dirs["coarse"], "posterior_counts.tsv.gz"),
-    "coarse_mtx": os.path.join(dirs["coarse"], "matrix.tsv.gz"),
-    "coarse_mdl": os.path.join(dirs["coarse"], "model.pkl"),
-    "coarse_png": os.path.join(dirs["coarse"], "plot.png"),
-    # "coarse_svg": os.path.join(dirs["coarse"], "plot.svg"),
+    # lda model files
+    "model_fit": os.path.join(dirs["model"], "fit.tsv.gz"),
+    "model_res": os.path.join(dirs["model"], "results.pkl"),
+    "model_coh": os.path.join(dirs["model"], "coherence.tsv.gz"),
+    "model_pos": os.path.join(dirs["model"], "posterior_counts.tsv.gz"),
+    "model_mtx": os.path.join(dirs["model"], "matrix.tsv.gz"),
+    "model_mdl": os.path.join(dirs["model"], "model.pkl"),
+    "model_png": os.path.join(dirs["model"], "plot.png"),
 
     # Overlap rescore files
     "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.tsv.gz"),
     "scored_png": os.path.join(dirs["rescore"], "plot.png"),
-    # "scored_svg": os.path.join(dirs["rescore"], "plot.svg")
 }
 
 

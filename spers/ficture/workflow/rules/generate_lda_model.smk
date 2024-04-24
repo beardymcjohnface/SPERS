@@ -2,12 +2,12 @@ rule generate_lda_model:
     input:
         tsv = targets["transcripts"],
     output:
-        fit = targets["coarse_fit"],
-        res = targets["coarse_res"],
-        coh = targets["coarse_coh"],
-        pos = targets["coarse_pos"],
-        mtx = targets["coarse_mtx"],
-        mdl = targets["coarse_mdl"]
+        fit = targets["model_fit"],
+        res = targets["model_res"],
+        coh = targets["model_coh"],
+        pos = targets["model_pos"],
+        mtx = targets["model_mtx"],
+        mdl = targets["model_mdl"]
     params:
         params=config["lda_model"]
     log:
@@ -27,9 +27,9 @@ rule generate_lda_model:
 
 rule model_hex_bin_plot:
     input:
-        fit = targets["coarse_fit"],
+        fit = targets["model_fit"],
     output:
-        png = targets["coarse_png"],
+        png = targets["model_png"],
     params:
         hex_width=config["lda_model"]["bin"]["hex_width"],
         plot=config["plot"]

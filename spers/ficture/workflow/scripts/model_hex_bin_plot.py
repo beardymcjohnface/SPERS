@@ -14,9 +14,8 @@ def main(plot=None, hex_width=None, **kwargs):
     plot_ficture(
         fit_df,
         kwargs["out_png"],
-        hex_width=hex_width,
         font_scale=0.1,
-        point_scale=0.002,
+        point_scale=hex_width * 0.1,
         **plot
     )
 

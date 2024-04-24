@@ -6,7 +6,6 @@ def plot_ficture(
         plot_df,
         out_png,
         microns_per_inch=100,
-        hex_width=16,
         font_scale=0.1,
         point_scale=0.002,
         plot_top_n_factors=12,
@@ -28,7 +27,7 @@ def plot_ficture(
 
     # Get the font and point scales
     plot_font_scale = max(x_scale, y_scale) * font_scale
-    plot_point_scale = (x_scale * y_scale) * hex_width**2 * point_scale
+    plot_point_scale = max(x_scale, y_scale) * point_scale
 
     # Hue order by factor size
     hue_order = list(

@@ -1,7 +1,7 @@
 rule transcript_grid_score:
     input:
         tsv = targets["transcripts"],
-        mdl = targets["coarse_mdl"]
+        mdl = targets["model_mdl"]
     output:
         targets["overlapped_hex_scores"]
     params:

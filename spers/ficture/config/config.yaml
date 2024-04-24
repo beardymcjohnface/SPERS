@@ -47,11 +47,11 @@ spers:
                 hex_width: 12
                 offset_steps: [-1, 0, 1]
                 step_size: 6
-            filter:
+            plot_filter:
                 min_transcripts_per_hex: 10
                 max_transcripts_per_hex: 100
         plot:
-            microns_per_inch: 150
+            microns_per_inch: 50
             palette: Spectral
             background: black
             plot_top_n_factors: 12
