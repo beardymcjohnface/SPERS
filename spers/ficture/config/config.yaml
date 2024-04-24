@@ -15,12 +15,6 @@ spers:
                 y: y_location
                 gene: feature_name
             gene_filter: "Control|Neg|Unassigned"
-        ficture:
-            mu_scale: 1
-            headers:
-                gene: gene
-                x: X
-                y: Y
         lda_model:
             random_state: 555
             bin:
