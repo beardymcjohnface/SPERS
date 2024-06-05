@@ -1,6 +1,8 @@
 # SPERS
 
-SPatialomics Enhanced Research Suite (we can change the name later)
+SPatialomics Enhanced Research Suite
+
+This package is intended to house a collection of pipelines for spatialomics analysis. It currently only includes our Ficture implementation.
 
 ## Install
 
