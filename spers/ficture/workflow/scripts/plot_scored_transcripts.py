@@ -34,7 +34,7 @@ def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plo
     plot_ficture(
         transcripts_df,
         out_png,
-        point_scale = 1,
+        point_scale = 2,
         font_scale = 0.1,
         **plot)
 

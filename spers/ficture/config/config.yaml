@@ -42,8 +42,8 @@ spers:
                 offset_steps: [-1, 0, 1]
                 step_size: 6
             plot_filter:
-                min_transcripts_per_hex: 10
-                max_transcripts_per_hex: 100
+                min_transcripts_per_hex: 5
+                max_transcripts_per_hex: 50
         plot:
             microns_per_inch: 50
             palette: Spectral
