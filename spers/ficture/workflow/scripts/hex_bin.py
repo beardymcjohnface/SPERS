@@ -30,13 +30,15 @@ def transcript_to_hex_bins(df, x_offset=0, y_offset=0, hex_width=None, **params)
     :param scale: um size of hex bins
     :return: Pandas dataframe with ["hex_id", "xbin", "ybin", "x", "y", ...]
     """
-    half_w = hex_width / 2
-    half_h = hex_width * math.sqrt(3) / 2
+    # float32 halves the memory of every intermediate array below; coordinate
+    # precision in float32 (~1e-3 um at slide scale) is far finer than hex_width.
+    half_w = np.float32(hex_width / 2)
+    half_h = np.float32(hex_width * math.sqrt(3) / 2)
 
-    # Coords with the offset folded in once (no_copy view + single add per axis)
+    # Coords as float32 with the offset folded in once (single add per axis)
     logging.debug("Init coords")
-    xo = df["x"].to_numpy(copy=False) + x_offset
-    yo = df["y"].to_numpy(copy=False) + y_offset
+    xo = df["x"].to_numpy(dtype=np.float32) + np.float32(x_offset)
+    yo = df["y"].to_numpy(dtype=np.float32) + np.float32(y_offset)
 
     # Lattice cell indices (integer-valued floats)
     logging.debug("Scale coords")
