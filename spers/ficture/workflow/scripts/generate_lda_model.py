@@ -17,7 +17,10 @@ def calculate_gene_weights(df):
     :param df: pandas dataframe ["gene", ...]
     :return: pandas dataframe with ["gene", "Weight"]
     """
-    gene_weights = df.groupby("gene").size().reset_index()
+    if "count" in df.columns:
+        gene_weights = df.groupby("gene")["count"].sum().reset_index()
+    else:
+        gene_weights = df.groupby("gene").size().reset_index()
     gene_weights.columns = ["gene", "Count"]
     gene_weights["Weight"] = gene_weights.Count * 1. / gene_weights.Count.sum()
     return gene_weights[["gene","Weight"]]
@@ -31,8 +34,11 @@ def df_to_mtx(df):
     :return: pandas wide dataframe [cols=gene, rows=hex_id, values=sum(Count)]
     """
 
-    # collapse hex gene counts
-    df = df.groupby(["hex_id", "gene"]).size().reset_index()
+    # collapse hex gene counts (weight by "count" column if present, e.g. Visium HD)
+    if "count" in df.columns:
+        df = df.groupby(["hex_id", "gene"])["count"].sum().reset_index()
+    else:
+        df = df.groupby(["hex_id", "gene"]).size().reset_index()
     df.columns = ["hex_id", "gene", "count"]
 
     # Pivot wide
@@ -256,7 +262,7 @@ def main(params=None, **kwargs):
     # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
     logging.debug("Reading transcripts")
-    transcripts_df = pd.read_csv(kwargs["in_tsv"], sep="\t", compression="gzip")
+    transcripts_df = pd.read_pickle(kwargs["in_tsv"])
 
     logging.debug("Filtering low count genes")
     transcripts_df = hex_bin.filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["bin"]["min_transcripts_per_gene"])

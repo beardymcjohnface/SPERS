@@ -70,7 +70,7 @@ def main(in_tsv=None, in_mdl=None, out_tsv=None, log_file=None, threads=1, param
     logging.debug("Running transcript_rescore.py")
 
     logging.debug("Reading in transcript coords")
-    transcripts_df = pd.read_csv(in_tsv, sep="\t", compression="gzip")
+    transcripts_df = pd.read_pickle(in_tsv)
 
     logging.debug("Reading in trained LDA model")
     lda_model = pickle.load(open(in_mdl, "rb"))

@@ -11,8 +11,11 @@ def filter_min_transcripts_gene(df, min_transcripts_per_gene=None):
     :return: Filtered Pandas dataframe with ["transcript_id", "x", "y", "gene"]
     """
 
-    # Collect total gene counts
-    gene_counts = df.groupby("gene").size()
+    # Collect total gene counts (weight by "count" column if present, e.g. Visium HD)
+    if "count" in df.columns:
+        gene_counts = df.groupby("gene")["count"].sum()
+    else:
+        gene_counts = df.groupby("gene").size()
 
     # List of genes above min cutoff
     gene_filter = {k for k,v in gene_counts.items() if v >= min_transcripts_per_gene}
@@ -91,8 +94,11 @@ def filter_bins_min_count(df, min_transcripts_per_hex=None):
     :return: pandas dataframe filtered with ["hex_id", "transcript_id", "xbin", "ybin", "gene"]
     """
 
-    # Collect total hex transcript counts
-    hex_counts = df.groupby("hex_id").size()
+    # Collect total hex transcript counts (weight by "count" column if present)
+    if "count" in df.columns:
+        hex_counts = df.groupby("hex_id")["count"].sum()
+    else:
+        hex_counts = df.groupby("hex_id").size()
 
     # List of hex_ids above min cutoff
     hex_filter = {k for k,v in hex_counts.items() if v >= min_transcripts_per_hex}

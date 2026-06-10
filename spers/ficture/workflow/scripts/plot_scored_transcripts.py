@@ -10,7 +10,7 @@ def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plo
     logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
 
     logging.debug("Reading in transcript coords")
-    transcripts_df = pd.read_csv(in_trn, sep="\t", compression="gzip", usecols=["transcript_id", "x", "y"])
+    transcripts_df = pd.read_pickle(in_trn)[["transcript_id", "x", "y"]]
 
     logging.debug("Reading in transcript scores")
     scores_df = pd.read_csv(in_scr, sep="\t", compression="gzip", usecols=["transcript_id", "topK"])

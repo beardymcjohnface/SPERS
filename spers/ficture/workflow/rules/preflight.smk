@@ -14,8 +14,8 @@ dirs = {
 
 # Targets
 targets = {
-    # Convert to ficture TSV format
-    "transcripts": os.path.join(dirs["results"], "transcripts.tsv.gz"),
+    # Converted transcripts (pickled dataframe, preserves dtypes/precision)
+    "transcripts": os.path.join(dirs["results"], "transcripts.pkl"),
 
     # lda model files
     "model_fit": os.path.join(dirs["model"], "fit.tsv.gz"),

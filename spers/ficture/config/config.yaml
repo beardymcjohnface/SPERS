@@ -15,6 +15,13 @@ spers:
                 y: y_location
                 gene: feature_name
             gene_filter: "Control|Neg|Unassigned"
+        visiumhd:
+            # --input should point at the Space Ranger "outs/" directory.
+            # Coordinates are converted to microns using microns_per_pixel
+            # read from the bin's scalefactors_json.json.
+            bin_size: square_002um
+            feature_type: "Gene Expression"
+            gene_filter: ""
         lda_model:
             random_state: 555
             bin:

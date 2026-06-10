@@ -62,7 +62,7 @@ def main(infile=None, outfile=None, log_file=None, params=None):
     logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
 
     logging.debug("Reading input transcripts: " + str(infile))
-    transcripts_df = pd.read_csv(infile, sep="\t", compression="gzip")
+    transcripts_df = pd.read_pickle(infile)
 
     logging.debug("Calculating minibatch dimensions")
     params = batch_dimensions(transcripts_df, **params)

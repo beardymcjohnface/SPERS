@@ -44,7 +44,7 @@ def main(**kwargs):
     transcripts_df = read_transcripts(kwargs["input_csv"], kwargs["params"])
 
     logging.debug("Writing output transcripts")
-    transcripts_df.to_csv(kwargs["out_tsv"], sep="\t", compression="gzip", index=False, float_format="%.2f")
+    transcripts_df.to_pickle(kwargs["out_tsv"])
 
 
 
