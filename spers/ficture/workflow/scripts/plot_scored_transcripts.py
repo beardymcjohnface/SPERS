@@ -10,8 +10,21 @@ except ModuleNotFoundError:
     from plot import plot_ficture
 
 
-def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plot=None):
+def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plot=None, platform=None):
     logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
+
+    if platform == "visiumhd":
+        # Spot-level scores are already per hex bin with centroid coords; plot directly
+        logging.debug("Plotting spot-level hex-bin scores")
+        scores_df = pd.read_pickle(in_scr)
+        scores_df = scores_df[scores_df["Count"] >= params["plot_filter"]["min_transcripts_per_hex"]]
+        plot_ficture(
+            scores_df[["x", "y", "topK"]],
+            out_png,
+            point_scale=params["grid_score"]["hex_width"] ** 2 * 0.9,
+            font_scale=0.1,
+            **plot)
+        return
 
     logging.debug("Reading in transcript coords")
     transcripts_df = pd.read_pickle(in_trn)[["transcript_id", "x", "y"]]
@@ -49,5 +62,6 @@ if __name__ == "__main__":
         out_png=snakemake.output.png,
         log_file=snakemake.log[0],
         params=snakemake.params.params,
-        plot=snakemake.params.plot
+        plot=snakemake.params.plot,
+        platform=snakemake.params.platform
     )

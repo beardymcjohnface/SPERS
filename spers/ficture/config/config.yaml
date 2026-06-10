@@ -44,9 +44,9 @@ spers:
                 doc_topic_prior: 1
         transcript_score:
             grid_score:
-                hex_width: 16
+                hex_width: 24
                 offset_steps: [-1, 0, 1]
-                step_size: 8
+                step_size: 12
             plot_filter:
                 min_transcripts_per_hex: 5
                 max_transcripts_per_hex: 50

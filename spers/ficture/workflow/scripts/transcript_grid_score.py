@@ -71,10 +71,48 @@ def iterate_and_score(df, lda_model, hex_width=None, offset_steps=None, step_siz
     return all_results
 
 
-def main(in_tsv=None, in_mdl=None, out_tsv=None, log_file=None, threads=1, params=None):
+def score_spot_level(df, lda_model, hex_width=None, **params):
+    """
+    Score spot-level hex bins directly, without expanding back to transcripts.
+
+    For high-density platforms (e.g. Visium HD) the per-transcript output is huge
+    and redundant (every transcript in a spot shares the same hex). This bins the
+    transcripts once at the grid_score hex_width and returns one row per hex bin
+    with its full factor-score vector.
+
+    :param df: pandas dataframe ["transcript_id", "x", "y", "gene", "count", ...]
+    :param lda_model: trained LDA model
+    :param hex_width: int width of hex bins (= grid_score hex_width)
+    :return: pandas dataframe ["hex_id", "x", "y", "Count", "topK", "topP", "0", "1", ...]
+    """
+    logging.debug("Binning transcripts into spot-level hex bins")
+    hex_df = transcript_to_hex_bins(df, hex_width=hex_width)
+
+    logging.debug("Building hex count matrix")
+    hex_mtx = df_to_mtx(hex_df)
+    hex_mtx = hex_mtx[lda_model.feature_names_in_]
+
+    logging.debug("Scoring hex bins")
+    hex_transform = lda_model.transform(hex_mtx)
+
+    factor_header = [str(i) for i in range(hex_transform.shape[1])]
+    result = pd.DataFrame(hex_transform, columns=factor_header, index=hex_mtx.index)
+    result["topK"] = np.argmax(hex_transform, axis=1)
+    result["topP"] = hex_transform.max(axis=1)
+    result["Count"] = hex_mtx.sum(axis=1)
+
+    # Attach hex-bin centroid coordinates
+    coords = hex_df[["hex_id", "xbin", "ybin"]].drop_duplicates("hex_id").set_index("hex_id")
+    result = result.join(coords).rename(columns={"xbin": "x", "ybin": "y"})
+    result = result.reset_index()  # brings "hex_id" back as a column
+
+    return result[["hex_id", "x", "y", "Count", "topK", "topP"] + factor_header]
+
+
+def main(in_tsv=None, in_mdl=None, out_tsv=None, log_file=None, threads=1, params=None, platform=None):
     logging.basicConfig(filename=log_file, filemode="w", level=logging.DEBUG)
     # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    logging.debug("Running transcript_rescore.py")
+    logging.debug("Running transcript_grid_score.py")
 
     logging.debug("Reading in transcript coords")
     transcripts_df = pd.read_pickle(in_tsv)
@@ -83,11 +121,16 @@ def main(in_tsv=None, in_mdl=None, out_tsv=None, log_file=None, threads=1, param
     lda_model = pickle.load(open(in_mdl, "rb"))
     lda_model.n_jobs = threads
 
-    logging.debug("Generating overlapping hex bins and scoring")
-    transcript_scores = iterate_and_score(transcripts_df, lda_model, threads=threads, **params)
+    if platform == "visiumhd":
+        # Spot-level (hex-bin) scores: one row per hex bin, no transcript expansion
+        logging.debug("Spot-level hex-bin scoring (visiumhd)")
+        scores = score_spot_level(transcripts_df, lda_model, hex_width=params["hex_width"])
+    else:
+        logging.debug("Generating overlapping hex bins and scoring per transcript")
+        scores = iterate_and_score(transcripts_df, lda_model, threads=threads, **params)
 
-    logging.debug("Writing best scores for each transcript")
-    transcript_scores.to_pickle(out_tsv)
+    logging.debug("Writing scores")
+    scores.to_pickle(out_tsv)
 
 
 if __name__ == "__main__":
@@ -97,5 +140,6 @@ if __name__ == "__main__":
         out_tsv=snakemake.output[0],
         log_file=snakemake.log[0],
         threads=snakemake.threads,
-        params=snakemake.params.params
+        params=snakemake.params.params,
+        platform=snakemake.params.platform
     )

@@ -5,7 +5,8 @@ rule transcript_grid_score:
     output:
         targets["overlapped_hex_scores"]
     params:
-        params = config["transcript_score"]["grid_score"]
+        params = config["transcript_score"]["grid_score"],
+        platform = config["args"]["platform"]
     threads:
         config["resources"]["big"]["cpu"]
     resources:
@@ -29,7 +30,8 @@ rule plot_scored_transcripts:
         png = targets["scored_png"],
     params:
         params=config["transcript_score"],
-        plot=config["plot"]
+        plot=config["plot"],
+        platform=config["args"]["platform"]
     log:
         os.path.join(dirs["logs"], "plot_scored_transcripts.txt")
     benchmark:
