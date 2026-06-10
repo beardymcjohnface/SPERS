@@ -25,12 +25,11 @@ spers:
         lda_model:
             random_state: 555
             bin:
-                hex_width: 16
-                batch_size: 500
-                batch_buff: 30
+                hex_width: 24
+                batch_size: 1024
+                batch_buff: 48
                 min_transcripts_per_hex: 50
                 min_transcripts_per_gene: 50
-                min_transcripts_per_minibatch: 50
             train:
                 test_split: 0.5
                 generate_models: 5
@@ -45,9 +44,9 @@ spers:
                 doc_topic_prior: 1
         transcript_score:
             grid_score:
-                hex_width: 12
+                hex_width: 16
                 offset_steps: [-1, 0, 1]
-                step_size: 6
+                step_size: 8
             plot_filter:
                 min_transcripts_per_hex: 5
                 max_transcripts_per_hex: 50
