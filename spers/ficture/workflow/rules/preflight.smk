@@ -27,7 +27,7 @@ targets = {
     "model_png": os.path.join(dirs["model"], "plot.png"),
 
     # Overlap rescore files
-    "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.tsv.gz"),
+    "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.pkl"),
     "scored_png": os.path.join(dirs["rescore"], "plot.png"),
 }
 

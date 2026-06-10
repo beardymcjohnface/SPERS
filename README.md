@@ -62,11 +62,8 @@ from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
 
 transcripts_df = pd.read_pickle(
     "spers.out/ficture/results/transcripts.pkl").set_index("transcript_id")
-scored_df = pd.read_csv(
-    "spers.out/ficture/results/scored_transcripts/transcripts.rescored.tsv.gz",
-    sep="\t",
-    compression="gzip",
-    index_col="transcript_id")
+scored_df = pd.read_pickle(
+    "spers.out/ficture/results/scored_transcripts/transcripts.rescored.pkl").set_index("transcript_id")
 
 transcripts_df = pd.concat((transcripts_df, scored_df), axis=1, join="inner")
 transcripts_df = transcript_to_hex_bins(transcripts_df, hex_width=16) # I used 24 but 16 um is probably better IDK

@@ -29,18 +29,19 @@ def score_batch(df, lda_model, hex_width, xy_offsets):
     hex_transform = lda_model.transform(hex_mtx)
 
     logging.debug("Slicing best         (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
-    itr_result = pd.DataFrame({
-        "hex_id": hex_mtx.index,
-        "topK": np.argmax(hex_transform, axis=1),
-        "topP": hex_transform.max(axis=1)
-    })
+    # Keep the full per-factor score vector alongside the top factor/probability
+    factor_header = [str(i) for i in range(hex_transform.shape[1])]
+    itr_result = pd.DataFrame(hex_transform, columns=factor_header, index=hex_mtx.index)
+    itr_result["topK"] = np.argmax(hex_transform, axis=1)
+    itr_result["topP"] = hex_transform.max(axis=1)
+    itr_result = itr_result.reset_index()  # brings "hex_id" back as a column
 
     # Join transcript IDs
     logging.debug("Merging output       (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
     hex_df = hex_df.merge(itr_result, on="hex_id", how="inner")
 
     logging.debug("Returning results    (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
-    return hex_df[["transcript_id", "topK", "topP"]]
+    return hex_df[["transcript_id", "topK", "topP"] + factor_header]
 
 
 def iterate_and_score(df, lda_model, hex_width=None, offset_steps=None, step_size=None, threads=1, **params):
@@ -53,7 +54,7 @@ def iterate_and_score(df, lda_model, hex_width=None, offset_steps=None, step_siz
     :param offset_steps: list int offset X/Y steps to perform
     :param step_size: int size of X/Y offset steps
     :param params:
-    :return: pandas dataframe ["transcript_id", "best_hex_id", "best_topK", "best_topP"]
+    :return: pandas dataframe ["transcript_id", "topK", "topP", "0", "1", ... per-factor scores]
     """
 
     # Iterate offset steps and score
@@ -62,9 +63,9 @@ def iterate_and_score(df, lda_model, hex_width=None, offset_steps=None, step_siz
             for xy in ((x * step_size, y * step_size) for x in offset_steps for y in offset_steps)
     )
 
-    # get top score for each transcript
+    # get top score for each transcript (keeps that overlap's full factor vector)
     all_results = pd.concat(all_results).sort_values(
-        by="topP", ascending=False).groupby("transcript_id").head(1).reset_index()
+        by="topP", ascending=False).groupby("transcript_id").head(1).reset_index(drop=True)
 
     # Done!
     return all_results
@@ -86,7 +87,7 @@ def main(in_tsv=None, in_mdl=None, out_tsv=None, log_file=None, threads=1, param
     transcript_scores = iterate_and_score(transcripts_df, lda_model, threads=threads, **params)
 
     logging.debug("Writing best scores for each transcript")
-    transcript_scores.to_csv(out_tsv, sep="\t", compression="gzip", index=False, float_format="%.2f")
+    transcript_scores.to_pickle(out_tsv)
 
 
 if __name__ == "__main__":

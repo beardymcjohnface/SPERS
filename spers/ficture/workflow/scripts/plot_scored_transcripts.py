@@ -17,10 +17,9 @@ def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plo
     transcripts_df = pd.read_pickle(in_trn)[["transcript_id", "x", "y"]]
 
     logging.debug("Reading in transcript scores")
-    scores_df = pd.read_csv(in_scr, sep="\t", compression="gzip", usecols=["transcript_id", "topK"])
+    scores_df = pd.read_pickle(in_scr)[["transcript_id", "topK"]]
 
     logging.debug("Joining transcript classifications")
-    scores_df.columns = ["transcript_id", "topK"]
     transcripts_df = transcripts_df.merge(scores_df, on="transcript_id", how="inner")
 
     logging.debug("Calculating new hex bins for plotting")
