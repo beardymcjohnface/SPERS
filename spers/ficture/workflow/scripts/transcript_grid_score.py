@@ -3,8 +3,14 @@ import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
 
-from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
-from spers.ficture.workflow.scripts.generate_lda_model import df_to_mtx
+try:
+    from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
+    from spers.ficture.workflow.scripts.generate_lda_model import df_to_mtx
+except ModuleNotFoundError:
+    # Fall back to sibling imports when run as a Snakemake script in an
+    # isolated conda env where the spers package is not installed.
+    from hex_bin import transcript_to_hex_bins
+    from generate_lda_model import df_to_mtx
 
 
 def score_batch(df, lda_model, hex_width, xy_offsets):

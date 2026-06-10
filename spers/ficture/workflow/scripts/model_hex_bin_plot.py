@@ -1,7 +1,10 @@
 import logging
 import pandas as pd
 
-from spers.ficture.workflow.scripts.plot import plot_ficture
+try:
+    from spers.ficture.workflow.scripts.plot import plot_ficture
+except ModuleNotFoundError:
+    from plot import plot_ficture
 
 
 def main(plot=None, hex_width=None, **kwargs):

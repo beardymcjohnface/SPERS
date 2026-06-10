@@ -7,8 +7,16 @@ from sklearn.decomposition import LatentDirichletAllocation as LDA
 import numpy as np
 import pandas as pd
 
-import spers.ficture.workflow.scripts.hex_bin as hex_bin
-import spers.ficture.workflow.scripts.spatial_minibatch as minibatch
+try:
+    # Installed-package import (interactive use / README examples)
+    import spers.ficture.workflow.scripts.hex_bin as hex_bin
+    import spers.ficture.workflow.scripts.spatial_minibatch as minibatch
+except ModuleNotFoundError:
+    # Snakemake adds the script's directory to sys.path, so the sibling
+    # modules are importable even when the spers package is not installed
+    # (e.g. inside an isolated conda env).
+    import hex_bin
+    import spatial_minibatch as minibatch
 
 
 def calculate_gene_weights(df):

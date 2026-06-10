@@ -2,8 +2,12 @@ import logging
 import pandas as pd
 from sklearn.utils import shuffle
 
-from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
-from spers.ficture.workflow.scripts.plot import plot_ficture
+try:
+    from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
+    from spers.ficture.workflow.scripts.plot import plot_ficture
+except ModuleNotFoundError:
+    from hex_bin import transcript_to_hex_bins
+    from plot import plot_ficture
 
 
 def main(in_scr=None, in_trn=None, out_png=None, log_file=None, params=None, plot=None):
