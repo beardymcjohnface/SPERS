@@ -1,5 +1,5 @@
 import logging, pickle, sys
-from joblib import Parallel, delayed
+from joblib import Parallel, delayed, parallel_backend
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 from scipy import sparse, stats
@@ -36,24 +36,52 @@ def calculate_gene_weights(df):
 
 def df_to_mtx(df):
     """
-    Convert pandas dataframe to matrix
+    Build a sparse hex x gene count matrix directly (no dense pivot_table).
 
-    :param df: pandas input long dataframe ["hex_id", "gene", ...]
-    :return: pandas wide dataframe [cols=gene, rows=hex_id, values=sum(Count)]
+    Factorises hex_id and gene to integer row/column indices and constructs a
+    scipy CSR matrix; duplicate (hex, gene) entries are summed on conversion, so
+    no groupby is needed. This avoids materialising a dense hex x gene array
+    (catastrophic at Visium HD gene counts) and the dense->sparse round-trip.
+
+    :param df: pandas input long dataframe ["hex_id", "gene", ("count")]
+    :return: (scipy.sparse.csr_matrix, hex_ids ndarray, genes ndarray)
+             rows aligned to hex_ids, columns aligned to genes (both sorted)
     """
+    rows, hex_ids = pd.factorize(df["hex_id"], sort=True)
+    cols, genes = pd.factorize(df["gene"], sort=True)
 
-    # collapse hex gene counts (weight by "count" column if present, e.g. Visium HD)
+    # Weight by "count" column if present (e.g. Visium HD), else one per row
     if "count" in df.columns:
-        df = df.groupby(["hex_id", "gene"])["count"].sum().reset_index()
+        data = df["count"].to_numpy()
     else:
-        df = df.groupby(["hex_id", "gene"]).size().reset_index()
-    df.columns = ["hex_id", "gene", "count"]
+        data = np.ones(len(df), dtype=np.int64)
 
-    # Pivot wide
-    df = df.pivot_table(index="hex_id", columns="gene", values="count", aggfunc="sum", fill_value=0)
+    mtx = sparse.coo_matrix((data, (rows, cols)), shape=(len(hex_ids), len(genes)))
+    return mtx.tocsr(), np.asarray(hex_ids), np.asarray(genes)
 
-    # Return dataframe
-    return df
+
+def align_to_features(mtx_csr, genes, feature_names):
+    """
+    Reorder/subset sparse-matrix columns to match a model's feature order.
+
+    Genes in feature_names that are absent from `genes` become all-zero columns,
+    matching the previous DataFrame `mtx[feature_names]` behaviour but on a
+    sparse matrix.
+
+    :param mtx_csr: scipy CSR matrix (rows=hex, cols=genes)
+    :param genes: sequence of gene labels for the matrix columns
+    :param feature_names: target gene order (e.g. lda_model.feature_names_in_)
+    :return: scipy CSR matrix with columns ordered as feature_names
+    """
+    gene_to_idx = {g: i for i, g in enumerate(genes)}
+    zero_col = len(genes)
+    src = np.array([gene_to_idx.get(g, zero_col) for g in feature_names])
+
+    # Append one zero column so missing genes map to it, then reindex columns
+    padded = sparse.hstack(
+        [mtx_csr, sparse.csr_matrix((mtx_csr.shape[0], 1), dtype=mtx_csr.dtype)],
+        format="csc")
+    return padded[:, src].tocsr()
 
 
 def _vectorized_chisq(info, factor_header):
@@ -107,25 +135,33 @@ def _vectorized_chisq(info, factor_header):
 
 
 def _fit_one_model(r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_index,
-                   gene_names, factor_header, n_train, n_test, params):
+                   gene_names, factor_header, n_train, n_test, inner_jobs, params):
     """
     Fit a single candidate LDA model and score its coherence.
 
-    Designed to run inside a joblib worker, so the LDA itself is single-threaded
-    (n_jobs=1) to avoid oversubscribing cores when several models train at once.
-    Each model gets its own seed for genuinely independent fits.
+    Designed to run inside a joblib worker. Any spare cores (threads not consumed
+    by the outer model pool) are given to the LDA via a threading backend so we
+    don't nest process pools. Each model gets its own seed for independent fits.
     """
     seed = params["random_state"] + r
-    model = LDA(**params["lda"], n_jobs=1, verbose=0, random_state=seed)
+    model = LDA(**params["lda"], n_jobs=inner_jobs, verbose=0, random_state=seed)
 
-    # Independent shuffle per model (own seed)
+    # Independent shuffle per model (own seed). Threading backend lets the LDA
+    # E-step use the leftover cores without spawning nested processes.
     train_shuffled = shuffle(train_mtx, random_state=seed)
-    model.partial_fit(train_shuffled)
-    score_train = model.score(train_mtx) / n_train
-    score_test = model.score(test_mtx) / n_test
-    logging.debug(f"{r}: {score_train:.2f}, {score_test:.2f}")
+    with parallel_backend("threading", n_jobs=inner_jobs):
+        model.partial_fit(train_shuffled)
 
-    test_mtx_transform = model.transform(test_mtx)
+        # model.score is two extra full passes and is not used for selection
+        # (coherence is), so it is skipped unless explicitly requested.
+        if params["train"].get("score_models", False):
+            score_train = model.score(train_mtx) / n_train
+            score_test = model.score(test_mtx) / n_test
+        else:
+            score_train = score_test = float("nan")
+
+        test_mtx_transform = model.transform(test_mtx)
+    logging.debug(f"{r}: {score_train:.2f}, {score_test:.2f}")
 
     # DE genes from the test data (vectorised chi-square)
     info = pd.DataFrame(test_mtx_csc.T @ test_mtx_transform, columns=factor_header, index=gene_names)
@@ -158,22 +194,21 @@ def _fit_one_model(r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_inde
                "model": model, "coherence": score}, coherence_rows
 
 
-def train_select_lda(mtx, transcripts_df, **params):
+def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **params):
     """
     Train and select lda
 
-    :param mtx: pandas dataframe wide matrix (cols=gene, rows=hex_id)
-    :param transcripts_df: pandas long daraframe  ["hex_id", "transcript_id", "xbin", "ybin", "gene", ...]
+    :param mtx_csr: scipy CSR hex x gene count matrix
+    :param hex_ids: ndarray of hex_id row labels (aligned to mtx_csr rows)
+    :param genes: ndarray of gene column labels (aligned to mtx_csr columns)
+    :param transcripts_df: pandas long dataframe ["hex_id", "transcript_id", "xbin", "ybin", "gene", ...]
     :param params: parameters passed from config
     :return:
     """
 
-    # convert matrix to CSR
-    mtx_csr = sparse.coo_array(mtx).tocsr()
-
     # split into test and train
     train_mtx, test_mtx = train_test_split(mtx_csr, test_size=params["train"]["test_split"])
-    test_mtx_csc = sparse.coo_array(test_mtx).tocsc()
+    test_mtx_csc = test_mtx.tocsc()
     n_train, _ = train_mtx.shape
     n_test, _ = test_mtx.shape
 
@@ -183,19 +218,20 @@ def train_select_lda(mtx, transcripts_df, **params):
 
     # misc params
     factor_header = list(np.arange(params["lda"]["n_components"]).astype(str))
-    gene_names = list(mtx.columns)
+    gene_names = list(genes)
     gene_index = {x: i for i, x in enumerate(gene_names)}
 
-    # Train the independent candidate models in parallel. Each LDA runs
-    # single-threaded (n_jobs=1 inside _fit_one_model) so the outer pool keeps
-    # cores busy without nested oversubscription.
+    # Train the independent candidate models in parallel. Cores left over after
+    # the model pool (threads // n_workers) are handed to each LDA's E-step via a
+    # threading backend, so spare CPUs are not left idle.
     n_workers = min(params["threads"], params["train"]["generate_models"])
+    inner_jobs = max(1, params["threads"] // n_workers)
     logging.debug(
-        f"Training {params['train']['generate_models']} candidate models on {n_workers} worker(s)")
+        f"Training {params['train']['generate_models']} models on {n_workers} worker(s) x {inner_jobs} thread(s)")
     fitted = Parallel(n_jobs=n_workers)(
         delayed(_fit_one_model)(
             r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_index,
-            gene_names, factor_header, n_train, n_test, params)
+            gene_names, factor_header, n_train, n_test, inner_jobs, params)
         for r in range(params["train"]["generate_models"]))
 
     # Collect results
@@ -214,13 +250,14 @@ def train_select_lda(mtx, transcripts_df, **params):
     coherence_scores = coherence_scores.sort_values(ascending=False)
     best_model = model_results[coherence_scores.index[0]]["model"]
 
-    # refine with minibatches
+    # refine with minibatches (integer row slicing on the sparse matrix instead
+    # of an O(n_batches x n_hexes) isin scan + sparse rebuild per batch)
     logging.debug("Refining best model with minibatches")
+    hexid_to_row = {h: i for i, h in enumerate(hex_ids)}
     for minibatch_hex_ids in minibatch.minibatch_transcripts(transcripts_df, **params["bin"]):
-        batch_mtx = mtx[mtx.index.isin(minibatch_hex_ids)]
-        batch_mtx = sparse.coo_array(batch_mtx).tocsr()
-        if batch_mtx.shape[0] > 1:
-            _ = best_model.partial_fit(batch_mtx)
+        rows = [hexid_to_row[h] for h in minibatch_hex_ids if h in hexid_to_row]
+        if len(rows) > 1:
+            _ = best_model.partial_fit(mtx_csr[rows])
 
     # Relabel factors
     weight = best_model.components_.sum(axis=1)
@@ -237,10 +274,8 @@ def train_select_lda(mtx, transcripts_df, **params):
     mtx_csr_transform = best_model.transform(mtx_csr)
 
     # FIT OUTPUT
-    fit_result = pd.DataFrame()
-    fit_result["hex_id"] = mtx.index
-    fit_result = fit_result.set_index("hex_id")
-    fit_result["Count"] = np.sum(mtx_csr, axis=1)
+    fit_result = pd.DataFrame(index=pd.Index(hex_ids, name="hex_id"))
+    fit_result["Count"] = np.asarray(mtx_csr.sum(axis=1)).ravel()
 
     # Merge hex bin coords
     hex_bin_coords = transcripts_df[["hex_id","xbin","ybin"]]
@@ -269,7 +304,7 @@ def train_select_lda(mtx, transcripts_df, **params):
     best_model.feature_names_in_ = gene_weights["gene"]
 
     # best_model.log_norm_scaling_const_ = scale_const # todo update if log norm
-    best_model.unit_sum_mean_ = np.mean(np.sum(mtx_csr, axis=1))
+    best_model.unit_sum_mean_ = np.mean(np.asarray(mtx_csr.sum(axis=1)))
 
     # model matrix dataframe
     model_matrix = pd.DataFrame(best_model.components_.T, columns=factor_header, dtype="float64")
@@ -303,12 +338,12 @@ def main(params=None, **kwargs):
     params["bin"] = minibatch.batch_dimensions(transcripts_df, **params["bin"])
 
     logging.debug("Reformatting the dataframe")
-    hex_mtx = df_to_mtx(transcripts_df)
+    mtx_csr, hex_ids, genes = df_to_mtx(transcripts_df)
 
     # TODO: add in options for log normalisation
 
     logging.debug("Iterative running LatentDirichletAllocation")
-    train_select_lda(hex_mtx, transcripts_df, **kwargs, **params)
+    train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **kwargs, **params)
 
 
 

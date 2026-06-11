@@ -35,6 +35,9 @@ spers:
                 generate_models: 5
                 output_models: 5
                 min_transcripts_scored: 50
+                # score_models computes the LDA train/test bound (two extra full
+                # passes per model); not used for selection, off by default
+                score_models: false
             lda:
                 n_components: 12
                 learning_method: online

@@ -1,16 +1,20 @@
-import logging, pickle, sys
+import logging, pickle, sys, warnings
 import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
 
+# The model carries feature_names_in_ (used to align columns), but we score
+# name-less sparse matrices, which triggers a benign sklearn warning per batch.
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
+
 try:
     from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
-    from spers.ficture.workflow.scripts.generate_lda_model import df_to_mtx
+    from spers.ficture.workflow.scripts.generate_lda_model import df_to_mtx, align_to_features
 except ModuleNotFoundError:
     # Fall back to sibling imports when run as a Snakemake script in an
     # isolated conda env where the spers package is not installed.
     from hex_bin import transcript_to_hex_bins
-    from generate_lda_model import df_to_mtx
+    from generate_lda_model import df_to_mtx, align_to_features
 
 
 def score_batch(df, lda_model, hex_width, xy_offsets):
@@ -19,10 +23,10 @@ def score_batch(df, lda_model, hex_width, xy_offsets):
     logging.debug("Generating hex bins  (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
     hex_df = transcript_to_hex_bins(df, x_offset=xy_offsets[0], y_offset=xy_offsets[1], hex_width=hex_width)
 
-    # Transform for scoring
+    # Transform for scoring (sparse matrix, columns aligned to the model genes)
     logging.debug("Transforming         (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
-    hex_mtx = df_to_mtx(hex_df)
-    hex_mtx = hex_mtx[lda_model.feature_names_in_]
+    hex_mtx, hex_ids, hex_genes = df_to_mtx(hex_df)
+    hex_mtx = align_to_features(hex_mtx, hex_genes, lda_model.feature_names_in_)
 
     # Score bins
     logging.debug("Scoring              (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
@@ -31,7 +35,7 @@ def score_batch(df, lda_model, hex_width, xy_offsets):
     logging.debug("Slicing best         (x: " + str(xy_offsets[0]) + " and y: " + str(xy_offsets[1]) + ")")
     # Keep the full per-factor score vector alongside the top factor/probability
     factor_header = [str(i) for i in range(hex_transform.shape[1])]
-    itr_result = pd.DataFrame(hex_transform, columns=factor_header, index=hex_mtx.index)
+    itr_result = pd.DataFrame(hex_transform, columns=factor_header, index=pd.Index(hex_ids, name="hex_id"))
     itr_result["topK"] = np.argmax(hex_transform, axis=1)
     itr_result["topP"] = hex_transform.max(axis=1)
     itr_result = itr_result.reset_index()  # brings "hex_id" back as a column
@@ -89,17 +93,17 @@ def score_spot_level(df, lda_model, hex_width=None, **params):
     hex_df = transcript_to_hex_bins(df, hex_width=hex_width)
 
     logging.debug("Building hex count matrix")
-    hex_mtx = df_to_mtx(hex_df)
-    hex_mtx = hex_mtx[lda_model.feature_names_in_]
+    hex_mtx, hex_ids, hex_genes = df_to_mtx(hex_df)
+    hex_mtx = align_to_features(hex_mtx, hex_genes, lda_model.feature_names_in_)
 
     logging.debug("Scoring hex bins")
     hex_transform = lda_model.transform(hex_mtx)
 
     factor_header = [str(i) for i in range(hex_transform.shape[1])]
-    result = pd.DataFrame(hex_transform, columns=factor_header, index=hex_mtx.index)
+    result = pd.DataFrame(hex_transform, columns=factor_header, index=pd.Index(hex_ids, name="hex_id"))
     result["topK"] = np.argmax(hex_transform, axis=1)
     result["topP"] = hex_transform.max(axis=1)
-    result["Count"] = hex_mtx.sum(axis=1)
+    result["Count"] = np.asarray(hex_mtx.sum(axis=1)).ravel()
 
     # Attach hex-bin centroid coordinates
     coords = hex_df[["hex_id", "xbin", "ybin"]].drop_duplicates("hex_id").set_index("hex_id")
