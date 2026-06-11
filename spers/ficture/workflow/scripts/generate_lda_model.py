@@ -56,39 +56,106 @@ def df_to_mtx(df):
     return df
 
 
-def gen_even_slices(n, n_packs):
-    start = 0
-    if n_packs < 1:
-        raise ValueError("gen_even_slices got n_packs=%s, must be >=1" % n_packs)
-    for pack_num in range(n_packs):
-        this_n = n // n_packs
-        if pack_num < n % n_packs:
-            this_n += 1
-        if this_n > 0:
-            end = start + this_n
-            yield np.arange(start, end)
-            start = end
+def _vectorized_chisq(info, factor_header):
+    """
+    Vectorised 2x2 chi-square enrichment of each gene within each factor.
+
+    Replaces the per-gene scipy.chi2_contingency loop with the closed-form 2x2
+    statistic computed over the whole (gene x factor) matrix at once, which is
+    far faster and removes the per-factor joblib pools. Returns the same columns
+    as before: ["gene", "factor", "Chi2", "pval", "FoldChange", "gene_total", "Rank"].
+
+    :param info: pandas dataframe indexed by gene, columns = factor_header (+ gene_total)
+    :param factor_header: list of factor column names (strings)
+    :return: pandas dataframe of per (gene, factor) enrichment stats, sorted
+    """
+    genes = list(info.index)
+    a = info[factor_header].to_numpy(dtype="float64")        # gene-in-factor counts (G x K)
+    gene_total = a.sum(axis=1)                               # (G,)
+    total_k = a.sum(axis=0)                                  # (K,)
+    total_umi = a.sum()
+
+    b = gene_total[:, None] - a
+    c = total_k[None, :] - a
+    d = total_umi - total_k[None, :] - gene_total[:, None] + a
+
+    # Enrichment fold change (pre-pseudocount), used to keep only enriched genes
+    with np.errstate(divide="ignore", invalid="ignore"):
+        fold = (a / total_k[None, :]) / b * (total_umi - total_k[None, :])
+
+    keep = (a > 0) & (fold >= 1)
+
+    # Pseudocounted integer table (matches np.around(tab, 0).astype(int) + 1)
+    ai = np.rint(a) + 1; bi = np.rint(b) + 1
+    ci = np.rint(c) + 1; di = np.rint(d) + 1
+    n = ai + bi + ci + di
+    chi2 = n * (ai * di - bi * ci) ** 2 / ((ai + bi) * (ci + di) * (ai + ci) * (bi + di))
+    pval = stats.chi2.sf(chi2, 1)
+
+    gi, ki = np.nonzero(keep)
+    chidf = pd.DataFrame({
+        "gene": [genes[g] for g in gi],
+        "factor": [factor_header[k] for k in ki],
+        "Chi2": chi2[gi, ki],
+        "pval": pval[gi, ki],
+        "FoldChange": fold[gi, ki],
+        "gene_total": gene_total[gi].astype(int),
+    })
+    chidf["Rank"] = chidf.groupby(by="factor")["Chi2"].rank(ascending=False)
+    chidf.sort_values(by=["factor", "Chi2"], ascending=[True, False], inplace=True)
+    return chidf
 
 
-def chisq(k,info,total_k,total_umi):
-    res = []
-    if total_k <= 0:
-        return res
-    for name, v in info.iterrows():
-        if v[k] <= 0:
-            continue
-        tab=np.zeros((2,2))
-        tab[0,0]=v[str(k)]
-        tab[0,1]=v["gene_total"]-tab[0,0]
-        tab[1,0]=total_k-tab[0,0]
-        tab[1,1]=total_umi-total_k-v["gene_total"]+tab[0,0]
-        fd=tab[0,0]/total_k/tab[0,1]*(total_umi-total_k)
-        if fd < 1:
-            continue
-        tab = np.around(tab, 0).astype(int) + 1
-        chi2, p, dof, ex = stats.chi2_contingency(tab, correction=False)
-        res.append([name,k,chi2,p,fd,v["gene_total"]])
-    return res
+def _fit_one_model(r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_index,
+                   gene_names, factor_header, n_train, n_test, params):
+    """
+    Fit a single candidate LDA model and score its coherence.
+
+    Designed to run inside a joblib worker, so the LDA itself is single-threaded
+    (n_jobs=1) to avoid oversubscribing cores when several models train at once.
+    Each model gets its own seed for genuinely independent fits.
+    """
+    seed = params["random_state"] + r
+    model = LDA(**params["lda"], n_jobs=1, verbose=0, random_state=seed)
+
+    # Independent shuffle per model (own seed)
+    train_shuffled = shuffle(train_mtx, random_state=seed)
+    model.partial_fit(train_shuffled)
+    score_train = model.score(train_mtx) / n_train
+    score_test = model.score(test_mtx) / n_test
+    logging.debug(f"{r}: {score_train:.2f}, {score_test:.2f}")
+
+    test_mtx_transform = model.transform(test_mtx)
+
+    # DE genes from the test data (vectorised chi-square)
+    info = pd.DataFrame(test_mtx_csc.T @ test_mtx_transform, columns=factor_header, index=gene_names)
+    info["gene_total"] = info[factor_header].sum(axis=1)
+    info = info[info["gene_total"] >= params["train"]["min_transcripts_scored"]]
+    chidf = _vectorized_chisq(info, factor_header)
+
+    # Coherence score using top DE gene co-occurrence
+    n_top = params["train"]["output_models"]
+    weights = gene_weights.Weight.values
+    score = []
+    coherence_rows = []
+    for k in range(params["lda"]["n_components"]):
+        wd_idx = chidf.loc[chidf.factor.eq(str(k))].gene.iloc[:n_top].map(gene_index).values
+        wd_idx = sorted(list(wd_idx), key=lambda x: -weights[x])
+        s = 0
+        for ii in range(n_top - 1):
+            for jj in range(ii + 1, n_top):
+                i = wd_idx[ii]
+                j = wd_idx[jj]
+                idx = test_mtx_csc.indices[test_mtx_csc.indptr[i]:test_mtx_csc.indptr[i + 1]]
+                denom = test_mtx_csc[:, [i]].toarray()[idx] * weights[j] / weights[i]
+                num = test_mtx_csc[:, [j]].toarray()[idx]
+                s += (test_mtx_transform[idx, k].reshape((-1, 1)) * np.log(num / denom + 1)).sum()
+        s0 = s / test_mtx_transform[:, k].sum()
+        coherence_rows.append([r, k, s, s0])
+        score.append(s0)
+
+    return r, {"score_train": score_train, "score_test": score_test,
+               "model": model, "coherence": score}, coherence_rows
 
 
 def train_select_lda(mtx, transcripts_df, **params):
@@ -116,76 +183,27 @@ def train_select_lda(mtx, transcripts_df, **params):
 
     # misc params
     factor_header = list(np.arange(params["lda"]["n_components"]).astype(str))
-    gene_index = {x:i for i,x in enumerate(list(mtx.columns))}
+    gene_names = list(mtx.columns)
+    gene_index = {x: i for i, x in enumerate(gene_names)}
+
+    # Train the independent candidate models in parallel. Each LDA runs
+    # single-threaded (n_jobs=1 inside _fit_one_model) so the outer pool keeps
+    # cores busy without nested oversubscription.
+    n_workers = min(params["threads"], params["train"]["generate_models"])
+    logging.debug(
+        f"Training {params['train']['generate_models']} candidate models on {n_workers} worker(s)")
+    fitted = Parallel(n_jobs=n_workers)(
+        delayed(_fit_one_model)(
+            r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_index,
+            gene_names, factor_header, n_train, n_test, params)
+        for r in range(params["train"]["generate_models"]))
+
+    # Collect results
     coherence_scores = []
     model_results = {}
-
-    # Iterate run LDA
-    for r in range(params["train"]["generate_models"]):
-        # Initialise the model
-        model = LDA(
-            **params["lda"],
-            n_jobs=params["threads"],
-            verbose=0,
-            random_state=params["random_state"])
-
-        # Shuffle and score
-        train_mtx = shuffle(train_mtx, random_state=params["random_state"])
-        _ = model.partial_fit(train_mtx)
-        score_train = model.score(train_mtx) / n_train
-        score_test = model.score(test_mtx) / n_test
-
-        # Report
-        logging.debug(f"{r}: {score_train:.2f}, {score_test:.2f}")
-
-        # Transform the test set
-        test_mtx_transform = model.transform(test_mtx)
-
-        # Get DE genes from the test data
-        info = test_mtx.tocsc().T @ test_mtx_transform
-        info = pd.DataFrame(info, columns=factor_header)
-
-        info.index = list(mtx.columns)
-        info["gene_total"] = info[factor_header].sum(axis=1)
-        info.drop(index=info.index[info.gene_total < params["train"]["min_transcripts_scored"]], inplace=True)
-        total_k = np.array(info[factor_header].sum(axis=0))
-        total_umi = info[factor_header].sum().sum()
-        res = []
-
-        for k, kname in enumerate(factor_header):
-            idx_slices = [idx for idx in gen_even_slices(len(info), params["threads"])]
-            with Parallel(n_jobs=params["threads"], verbose=0) as parallel:
-                result = parallel(
-                    delayed(chisq)(
-                        kname,info.iloc[idx, :].loc[:, [kname, "gene_total"]],total_k[k], total_umi
-                    ) for idx in idx_slices
-                )
-            res += [item for sublist in result for item in sublist]
-
-        chidf = pd.DataFrame(res, columns=["gene", "factor", "Chi2", "pval", "FoldChange", "gene_total"])
-        chidf["Rank"] = chidf.groupby(by="factor")["Chi2"].rank(ascending=False)
-        chidf.gene_total = chidf.gene_total.astype(int)
-        chidf.sort_values(by=["factor", "Chi2"], ascending=[True, False], inplace=True)
-
-        # Compute a "coherence" score using top DE gene co-occurrence
-        score = []
-        for k in range(params["lda"]["n_components"]):
-            wd_idx = chidf.loc[chidf.factor.eq(str(k))].gene.iloc[:params["train"]["output_models"]].map(gene_index).values
-            wd_idx = sorted(list(wd_idx), key=lambda x: -gene_weights.Weight.values[x])
-            s = 0
-            for ii in range(params["train"]["output_models"] - 1):
-                for jj in range(ii + 1, params["train"]["output_models"]):
-                    i = wd_idx[ii]
-                    j = wd_idx[jj]
-                    idx = test_mtx_csc.indices[test_mtx_csc.indptr[i]:test_mtx_csc.indptr[i + 1]]
-                    denom = test_mtx_csc[:, [i]].toarray()[idx] * gene_weights.Weight.values[j] / gene_weights.Weight.values[i]
-                    num = test_mtx_csc[:, [j]].toarray()[idx]
-                    s += (test_mtx_transform[idx, k].reshape((-1, 1)) * np.log(num / denom + 1)).sum()
-            s0 = s / test_mtx_transform[:, k].sum()
-            coherence_scores.append([r, k, s, s0])
-            score.append(s0)
-
-        model_results[r] = {"score_train": score_train, "score_test": score_test, "model": model, "coherence": score}
+    for r, res, coh_rows in fitted:
+        model_results[r] = res
+        coherence_scores.extend(coh_rows)
 
     # Save results
     logging.debug("Saving model results and coherence scores")
