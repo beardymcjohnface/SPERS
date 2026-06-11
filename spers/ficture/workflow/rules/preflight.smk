@@ -28,7 +28,10 @@ targets = {
 
     # Overlap rescore files
     "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.pkl"),
-    "scored_png": os.path.join(dirs["rescore"], "plot.png"),
+    "scored_top_png": os.path.join(dirs["rescore"], "top_factor.png"),
+    "scored_factor_png": expand(
+        os.path.join(dirs["rescore"], "factor_{k}.png"),
+        k=range(config["lda_model"]["lda"]["n_components"])),
 }
 
 

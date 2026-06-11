@@ -59,3 +59,54 @@ def plot_ficture(
     coarse_plot.set_ylabel("Y (microns)")
 
     plt.savefig(out_png)
+    plt.close()
+
+
+def plot_factor_score(
+        plot_df,
+        out_png,
+        factor,
+        microns_per_inch=100,
+        font_scale=0.1,
+        point_scale=0.002,
+        background="black",
+        palette="magma",
+        **params):
+    """
+    Spatial plot of a single factor's per-spot score (continuous colour scale).
+
+    :param plot_df: pandas dataframe ["x", "y", <factor>]
+    :param out_png: str filepath of output plot
+    :param factor: column name of the factor score to colour by
+    :param params: extra config params (ignored)
+    """
+
+    # Get figure dimensions for output plot
+    x_scale = (plot_df["x"].max() - plot_df["x"].min()) / microns_per_inch
+    y_scale = (plot_df["y"].max() - plot_df["y"].min()) / microns_per_inch
+    plt.figure(figsize=(x_scale, y_scale))
+
+    plot_font_scale = max(x_scale, y_scale) * font_scale
+
+    seaborn.set(
+        rc={
+            "axes.facecolor": background,
+            "figure.facecolor": background,
+            "axes.grid": False},
+        font_scale=plot_font_scale)
+
+    factor_plot = seaborn.scatterplot(
+        plot_df,
+        x="x",
+        y="y",
+        hue=factor,
+        s=point_scale,
+        palette=palette,
+        edgecolor=None)
+
+    factor_plot.legend([], [], frameon=False)
+    factor_plot.set_xlabel("X (microns)")
+    factor_plot.set_ylabel("Y (microns)")
+
+    plt.savefig(out_png)
+    plt.close()

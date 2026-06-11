@@ -27,7 +27,8 @@ rule plot_scored_transcripts:
         scr = targets["overlapped_hex_scores"],
         trn = targets["transcripts"]
     output:
-        png = targets["scored_png"],
+        top = targets["scored_top_png"],
+        factors = targets["scored_factor_png"]
     params:
         params=config["transcript_score"],
         plot=config["plot"],
