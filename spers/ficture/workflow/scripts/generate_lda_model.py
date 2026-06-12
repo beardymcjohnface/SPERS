@@ -38,6 +38,44 @@ def bin_hex_per_sample(df, hex_width=None):
     return pd.concat(parts, ignore_index=True)
 
 
+def balance_training_rows(hex_ids, transcripts_df, params):
+    """
+    Pick a per-sample balanced subset of hex bins for training, so that no single
+    sample (e.g. a high-depth OCT slide) dominates the shared factors. This
+    subsamples documents (bins); it does NOT touch per-bin counts, so within-sample
+    biological density/activity variation is preserved in the retained bins.
+
+    :param hex_ids: ndarray of hex_id labels aligned to the matrix rows
+    :param transcripts_df: dataframe with "hex_id" + "sample" columns
+    :param params: config params; reads train.balance_samples and train.bins_per_sample
+    :return: ndarray of row indices to train on, or None to use all bins
+    """
+    if not params["train"].get("balance_samples", True):
+        return None
+
+    # Map each matrix row (hex bin) to its sample
+    hex_sample = transcripts_df[["hex_id", "sample"]].drop_duplicates("hex_id")
+    hex_to_sample = dict(zip(hex_sample["hex_id"], hex_sample["sample"]))
+    row_sample = np.array([hex_to_sample[h] for h in hex_ids])
+    samples = list(dict.fromkeys(row_sample.tolist()))
+    counts = {s: int((row_sample == s).sum()) for s in samples}
+
+    # Target bins per sample: configured value, else match the smallest sample
+    target = params["train"].get("bins_per_sample") or min(counts.values())
+
+    rng = np.random.default_rng(params["random_state"])
+    selected = []
+    for sample in samples:
+        idx = np.where(row_sample == sample)[0]
+        if len(idx) > target:
+            idx = rng.choice(idx, size=target, replace=False)
+        selected.append(idx)
+    rows = np.sort(np.concatenate(selected))
+    logging.debug("Balancing training corpus: per-sample bins %s -> <=%d each (%d total)",
+                  counts, target, len(rows))
+    return rows
+
+
 def calculate_gene_weights(df):
     """
     Calculate weighting for all genes
@@ -213,20 +251,31 @@ def _fit_one_model(r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_inde
                "model": model, "coherence": score}, coherence_rows
 
 
-def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **params):
+def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=None, **params):
     """
     Train and select lda
 
-    :param mtx_csr: scipy CSR hex x gene count matrix
+    :param mtx_csr: scipy CSR hex x gene count matrix (all bins, all samples)
     :param hex_ids: ndarray of hex_id row labels (aligned to mtx_csr rows)
     :param genes: ndarray of gene column labels (aligned to mtx_csr columns)
-    :param transcripts_df: pandas long dataframe ["hex_id", "transcript_id", "xbin", "ybin", "gene", ...]
+    :param transcripts_df: pandas long dataframe ["hex_id", "sample", "xbin", "ybin", "gene", ...]
+    :param train_rows: optional ndarray of row indices to train on (balanced
+        per-sample subset). The model is fit on this subset; every bin is still
+        scored for the outputs. None -> use all bins.
     :param params: parameters passed from config
     :return:
     """
 
-    # split into test and train
-    train_mtx, test_mtx = train_test_split(mtx_csr, test_size=params["train"]["test_split"])
+    # Balance the training corpus: fit on a (per-sample subsampled) subset of bins
+    # so no sample dominates the shared factors. All bins are scored at the end.
+    if train_rows is None:
+        train_rows = np.arange(mtx_csr.shape[0])
+    train_rows = np.asarray(train_rows)
+    balanced_csr = mtx_csr[train_rows]
+    balanced_hex = set(hex_ids[train_rows].tolist())
+
+    # split the balanced corpus into test and train
+    train_mtx, test_mtx = train_test_split(balanced_csr, test_size=params["train"]["test_split"])
     test_mtx_csc = test_mtx.tocsc()
     n_train, _ = train_mtx.shape
     n_test, _ = test_mtx.shape
@@ -275,6 +324,10 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **params):
     logging.debug("Refining best model with minibatches (per sample)")
     hexid_to_row = {h: i for i, h in enumerate(hex_ids)}
     for sample, sample_df in transcripts_df.groupby("sample", sort=False):
+        # only refine on the balanced training bins for this sample
+        sample_df = sample_df[sample_df["hex_id"].isin(balanced_hex)]
+        if len(sample_df) == 0:
+            continue
         sample_bin = minibatch.batch_dimensions(sample_df, **params["bin"])
         for minibatch_hex_ids in minibatch.minibatch_transcripts(sample_df, **sample_bin):
             rows = [hexid_to_row[h] for h in minibatch_hex_ids if h in hexid_to_row]
@@ -371,8 +424,11 @@ def main(params=None, **kwargs):
 
     # TODO: add in options for log normalisation
 
+    logging.debug("Balancing per-sample contribution to the training corpus")
+    train_rows = balance_training_rows(hex_ids, transcripts_df, params)
+
     logging.debug("Iterative running LatentDirichletAllocation")
-    train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **kwargs, **params)
+    train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=train_rows, **kwargs, **params)
 
 
 

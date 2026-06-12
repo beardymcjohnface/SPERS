@@ -38,6 +38,12 @@ spers:
                 # score_models computes the LDA train/test bound (two extra full
                 # passes per model); not used for selection, off by default
                 score_models: false
+                # balance_samples subsamples hex bins so each sample contributes
+                # a comparable number to training (stops a high-depth sample, e.g.
+                # OCT vs FFPE, dominating the shared factors). All bins are still
+                # scored. bins_per_sample caps the target; null = smallest sample.
+                balance_samples: true
+                bins_per_sample: null
             lda:
                 n_components: 12
                 learning_method: online
