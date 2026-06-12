@@ -1,7 +1,32 @@
+# Pre-aggregate each sample's hex bins to a compact pickle so the joint training
+# step never holds every sample's raw transcripts in memory at once.
+rule hex_bin_sample:
+    input:
+        patterns["transcripts"]
+    output:
+        patterns["hexbins"]
+    params:
+        hex_width = config["lda_model"]["bin"]["hex_width"],
+        sample = lambda w: w.sample
+    threads:
+        config["resources"]["big"]["cpu"]
+    resources:
+        mem=config["resources"]["big"]["mem"],
+        time=config["resources"]["big"]["time"]
+    log:
+        os.path.join(dirs["logs"], "{sample}_hex_bin_sample.txt")
+    benchmark:
+        os.path.join(dirs["bench"], "{sample}_hex_bin_sample.txt")
+    conda:
+        os.path.join(dirs["envs"], "pyscripts.yaml")
+    script:
+        os.path.join(dirs["scripts"], "hex_bin_sample.py")
+
+
 # Joint model: trained once on all samples together (shared factors)
 rule generate_lda_model:
     input:
-        tsv = targets["transcripts"],
+        hexbins = expand(patterns["hexbins"], sample=SAMPLES),
     output:
         fit = model_files["model_fit"],
         res = model_files["model_res"],

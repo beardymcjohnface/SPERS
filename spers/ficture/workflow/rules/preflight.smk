@@ -18,6 +18,7 @@ n_factors = config["lda_model"]["lda"]["n_components"]
 # Per-sample path patterns (carry the {sample} wildcard; used by rules)
 patterns = {
     "transcripts": os.path.join(dirs["results"], "{sample}", "transcripts.pkl"),
+    "hexbins": os.path.join(dirs["results"], "{sample}", "hexbins.pkl"),
     "rescore": os.path.join(dirs["results"], "{sample}", "scored_transcripts", "transcripts.rescored.pkl"),
     "scored_top_png": os.path.join(dirs["results"], "{sample}", "scored_transcripts", "top_factor.png"),
     "scored_factor_png": os.path.join(dirs["results"], "{sample}", "scored_transcripts", "factor_{k}.png"),

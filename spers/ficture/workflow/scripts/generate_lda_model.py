@@ -19,25 +19,6 @@ except ModuleNotFoundError:
     import spatial_minibatch as minibatch
 
 
-def bin_hex_per_sample(df, hex_width=None):
-    """
-    Hex-bin each sample in its own coordinate space and namespace the hex ids by
-    sample, so that bins from different samples never collide when pooled into the
-    joint training matrix. Genes are shared across samples (one model).
-
-    :param df: pandas long dataframe with a "sample" column + ["x", "y", "gene", ...]
-    :param hex_width: int width of hex bins
-    :return: concatenated dataframe with ["xbin", "ybin", "hex_id" (= "sample:local"), ...]
-    """
-    parts = []
-    for sample, sample_df in df.groupby("sample", sort=False):
-        sample_df = hex_bin.transcript_to_hex_bins(
-            sample_df.copy(), x_offset=0, y_offset=0, hex_width=hex_width)
-        sample_df["hex_id"] = str(sample) + ":" + sample_df["hex_id"].astype(str)
-        parts.append(sample_df)
-    return pd.concat(parts, ignore_index=True)
-
-
 def balance_training_rows(hex_ids, transcripts_df, params):
     """
     Pick a per-sample balanced subset of hex bins for training, so that no single
@@ -251,14 +232,16 @@ def _fit_one_model(r, train_mtx, test_mtx, test_mtx_csc, gene_weights, gene_inde
                "model": model, "coherence": score}, coherence_rows
 
 
-def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=None, **params):
+def train_select_lda(mtx_csr, hex_ids, genes, hex_meta, gene_weights, train_rows=None, **params):
     """
     Train and select lda
 
     :param mtx_csr: scipy CSR hex x gene count matrix (all bins, all samples)
     :param hex_ids: ndarray of hex_id row labels (aligned to mtx_csr rows)
     :param genes: ndarray of gene column labels (aligned to mtx_csr columns)
-    :param transcripts_df: pandas long dataframe ["hex_id", "sample", "xbin", "ybin", "gene", ...]
+    :param hex_meta: per-bin dataframe ["hex_id", "sample", "xbin", "ybin"] (one row
+        per hex bin) - used for spatial minibatches and the fit-output coordinates
+    :param gene_weights: precomputed ["gene", "Weight"] dataframe
     :param train_rows: optional ndarray of row indices to train on (balanced
         per-sample subset). The model is fit on this subset; every bin is still
         scored for the outputs. None -> use all bins.
@@ -279,10 +262,6 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=None, *
     test_mtx_csc = test_mtx.tocsc()
     n_train, _ = train_mtx.shape
     n_test, _ = test_mtx.shape
-
-    # Need the gene weights
-    logging.debug("Calculating gene weights")
-    gene_weights = calculate_gene_weights(transcripts_df)
 
     # misc params
     factor_header = list(np.arange(params["lda"]["n_components"]).astype(str))
@@ -323,13 +302,13 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=None, *
     # slicing avoids an O(n_batches x n_hexes) isin scan + sparse rebuild.
     logging.debug("Refining best model with minibatches (per sample)")
     hexid_to_row = {h: i for i, h in enumerate(hex_ids)}
-    for sample, sample_df in transcripts_df.groupby("sample", sort=False):
+    for sample, sample_meta in hex_meta.groupby("sample", sort=False):
         # only refine on the balanced training bins for this sample
-        sample_df = sample_df[sample_df["hex_id"].isin(balanced_hex)]
-        if len(sample_df) == 0:
+        sample_meta = sample_meta[sample_meta["hex_id"].isin(balanced_hex)]
+        if len(sample_meta) == 0:
             continue
-        sample_bin = minibatch.batch_dimensions(sample_df, **params["bin"])
-        for minibatch_hex_ids in minibatch.minibatch_transcripts(sample_df, **sample_bin):
+        sample_bin = minibatch.batch_dimensions(sample_meta, **params["bin"])
+        for minibatch_hex_ids in minibatch.minibatch_transcripts(sample_meta, **sample_bin):
             rows = [hexid_to_row[h] for h in minibatch_hex_ids if h in hexid_to_row]
             if len(rows) > 1:
                 _ = best_model.partial_fit(mtx_csr[rows])
@@ -352,8 +331,8 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=None, *
     fit_result = pd.DataFrame(index=pd.Index(hex_ids, name="hex_id"))
     fit_result["Count"] = np.asarray(mtx_csr.sum(axis=1)).ravel()
 
-    # Merge hex bin sample + coords
-    hex_bin_coords = transcripts_df[["hex_id", "sample", "xbin", "ybin"]]
+    # Merge hex bin sample + coords (hex_meta is already one row per hex bin)
+    hex_bin_coords = hex_meta[["hex_id", "sample", "xbin", "ybin"]]
     hex_bin_coords = hex_bin_coords.drop_duplicates("hex_id").set_index("hex_id")
     fit_result = pd.concat([fit_result, hex_bin_coords], axis=1, join="inner").reset_index()
     fit_result = fit_result.rename(columns={"xbin":"x", "ybin":"y"})
@@ -397,45 +376,50 @@ def main(params=None, **kwargs):
     logging.basicConfig(filename=kwargs["log_file"], filemode="w", level=logging.DEBUG)
     # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
-    # in_tsv is a list of per-sample transcript pickles (joint training). The
-    # sample label is the parent directory name (results/<sample>/transcripts.pkl).
-    in_tsv = kwargs["in_tsv"]
-    if isinstance(in_tsv, str):
-        in_tsv = [in_tsv]
-    logging.debug("Reading transcripts for %d sample(s)", len(in_tsv))
-    frames = []
-    for f in in_tsv:
-        sample_df = pd.read_pickle(f)
-        sample_df["sample"] = os.path.basename(os.path.dirname(f))
-        frames.append(sample_df)
-    transcripts_df = pd.concat(frames, ignore_index=True)
+    # in_hexbins is a list of per-sample pre-aggregated hex-bin pickles, each a
+    # dict {"counts": [hex_id, gene, count], "meta": [hex_id, sample, xbin, ybin]}.
+    # These are far smaller than the raw transcripts, so the joint step never holds
+    # every sample's transcripts in memory at once.
+    in_hexbins = kwargs["in_hexbins"]
+    if isinstance(in_hexbins, str):
+        in_hexbins = [in_hexbins]
+    logging.debug("Reading pre-binned hex counts for %d sample(s)", len(in_hexbins))
+    counts_parts, meta_parts = [], []
+    for f in in_hexbins:
+        binned = pd.read_pickle(f)
+        counts_parts.append(binned["counts"])
+        meta_parts.append(binned["meta"])
+    counts = pd.concat(counts_parts, ignore_index=True)
+    hex_meta = pd.concat(meta_parts, ignore_index=True)
+    del counts_parts, meta_parts
 
     logging.debug("Filtering low count genes (pooled across samples)")
-    transcripts_df = hex_bin.filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["bin"]["min_transcripts_per_gene"])
-
-    logging.debug("Calculating per-sample hex bins")
-    transcripts_df = bin_hex_per_sample(transcripts_df, hex_width=params["bin"]["hex_width"])
+    gene_total = counts.groupby("gene")["count"].sum()
+    keep_genes = set(gene_total.index[gene_total >= params["bin"]["min_transcripts_per_gene"]])
+    counts = counts[counts["gene"].isin(keep_genes)]
 
     logging.debug("Filtering low count hex bins")
-    transcripts_df = hex_bin.filter_bins_min_count(transcripts_df, min_transcripts_per_hex=params["bin"]["min_transcripts_per_hex"])
+    hex_total = counts.groupby("hex_id")["count"].sum()
+    keep_hex = set(hex_total.index[hex_total >= params["bin"]["min_transcripts_per_hex"]])
+    counts = counts[counts["hex_id"].isin(keep_hex)]
+    hex_meta = hex_meta[hex_meta["hex_id"].isin(keep_hex)]
 
-    logging.debug("Reformatting the dataframe")
-    mtx_csr, hex_ids, genes = df_to_mtx(transcripts_df)
-
-    # TODO: add in options for log normalisation
+    logging.debug("Building the count matrix")
+    mtx_csr, hex_ids, genes = df_to_mtx(counts)
+    gene_weights = calculate_gene_weights(counts)
 
     logging.debug("Balancing per-sample contribution to the training corpus")
-    train_rows = balance_training_rows(hex_ids, transcripts_df, params)
+    train_rows = balance_training_rows(hex_ids, hex_meta, params)
 
     logging.debug("Iterative running LatentDirichletAllocation")
-    train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, train_rows=train_rows, **kwargs, **params)
+    train_select_lda(mtx_csr, hex_ids, genes, hex_meta, gene_weights, train_rows=train_rows, **kwargs, **params)
 
 
 
 
 if __name__ == "__main__":
     main(
-        in_tsv=snakemake.input.tsv,
+        in_hexbins=snakemake.input.hexbins,
         out_fit=snakemake.output.fit,
         out_res=snakemake.output.res,
         out_coh=snakemake.output.coh,
