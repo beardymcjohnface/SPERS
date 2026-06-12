@@ -1,4 +1,4 @@
-import logging, pickle, sys
+import logging, os, pickle, sys
 from joblib import Parallel, delayed, parallel_backend
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
@@ -17,6 +17,25 @@ except ModuleNotFoundError:
     # (e.g. inside an isolated conda env).
     import hex_bin
     import spatial_minibatch as minibatch
+
+
+def bin_hex_per_sample(df, hex_width=None):
+    """
+    Hex-bin each sample in its own coordinate space and namespace the hex ids by
+    sample, so that bins from different samples never collide when pooled into the
+    joint training matrix. Genes are shared across samples (one model).
+
+    :param df: pandas long dataframe with a "sample" column + ["x", "y", "gene", ...]
+    :param hex_width: int width of hex bins
+    :return: concatenated dataframe with ["xbin", "ybin", "hex_id" (= "sample:local"), ...]
+    """
+    parts = []
+    for sample, sample_df in df.groupby("sample", sort=False):
+        sample_df = hex_bin.transcript_to_hex_bins(
+            sample_df.copy(), x_offset=0, y_offset=0, hex_width=hex_width)
+        sample_df["hex_id"] = str(sample) + ":" + sample_df["hex_id"].astype(str)
+        parts.append(sample_df)
+    return pd.concat(parts, ignore_index=True)
 
 
 def calculate_gene_weights(df):
@@ -250,14 +269,17 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **params):
     coherence_scores = coherence_scores.sort_values(ascending=False)
     best_model = model_results[coherence_scores.index[0]]["model"]
 
-    # refine with minibatches (integer row slicing on the sparse matrix instead
-    # of an O(n_batches x n_hexes) isin scan + sparse rebuild per batch)
-    logging.debug("Refining best model with minibatches")
+    # refine with minibatches, per sample (each sample has its own coordinate
+    # space, so spatial batches must be computed within a sample). Integer row
+    # slicing avoids an O(n_batches x n_hexes) isin scan + sparse rebuild.
+    logging.debug("Refining best model with minibatches (per sample)")
     hexid_to_row = {h: i for i, h in enumerate(hex_ids)}
-    for minibatch_hex_ids in minibatch.minibatch_transcripts(transcripts_df, **params["bin"]):
-        rows = [hexid_to_row[h] for h in minibatch_hex_ids if h in hexid_to_row]
-        if len(rows) > 1:
-            _ = best_model.partial_fit(mtx_csr[rows])
+    for sample, sample_df in transcripts_df.groupby("sample", sort=False):
+        sample_bin = minibatch.batch_dimensions(sample_df, **params["bin"])
+        for minibatch_hex_ids in minibatch.minibatch_transcripts(sample_df, **sample_bin):
+            rows = [hexid_to_row[h] for h in minibatch_hex_ids if h in hexid_to_row]
+            if len(rows) > 1:
+                _ = best_model.partial_fit(mtx_csr[rows])
 
     # Relabel factors
     weight = best_model.components_.sum(axis=1)
@@ -265,9 +287,9 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **params):
     best_model.components_ = best_model.components_[ordered_k, :]
     best_model.exp_dirichlet_component_ = best_model.exp_dirichlet_component_[ordered_k, :]
 
-    # Rerun all units once and store results
-    output_header = ["hex_id", "Count", "x", "y", "topK", "topP"] + factor_header
-    dtp = {"topK": int, "Count": int, "hex_id": str}
+    # Rerun all units once and store results (carry the sample label per hex bin)
+    output_header = ["hex_id", "sample", "Count", "x", "y", "topK", "topP"] + factor_header
+    dtp = {"topK": int, "Count": int, "hex_id": str, "sample": str}
     dtp.update({x: float for x in ["topP"] + factor_header})
 
     # Get final hex bin model scores
@@ -277,9 +299,9 @@ def train_select_lda(mtx_csr, hex_ids, genes, transcripts_df, **params):
     fit_result = pd.DataFrame(index=pd.Index(hex_ids, name="hex_id"))
     fit_result["Count"] = np.asarray(mtx_csr.sum(axis=1)).ravel()
 
-    # Merge hex bin coords
-    hex_bin_coords = transcripts_df[["hex_id","xbin","ybin"]]
-    hex_bin_coords = hex_bin_coords.drop_duplicates().set_index("hex_id")
+    # Merge hex bin sample + coords
+    hex_bin_coords = transcripts_df[["hex_id", "sample", "xbin", "ybin"]]
+    hex_bin_coords = hex_bin_coords.drop_duplicates("hex_id").set_index("hex_id")
     fit_result = pd.concat([fit_result, hex_bin_coords], axis=1, join="inner").reset_index()
     fit_result = fit_result.rename(columns={"xbin":"x", "ybin":"y"})
 
@@ -322,20 +344,27 @@ def main(params=None, **kwargs):
     logging.basicConfig(filename=kwargs["log_file"], filemode="w", level=logging.DEBUG)
     # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
-    logging.debug("Reading transcripts")
-    transcripts_df = pd.read_pickle(kwargs["in_tsv"])
+    # in_tsv is a list of per-sample transcript pickles (joint training). The
+    # sample label is the parent directory name (results/<sample>/transcripts.pkl).
+    in_tsv = kwargs["in_tsv"]
+    if isinstance(in_tsv, str):
+        in_tsv = [in_tsv]
+    logging.debug("Reading transcripts for %d sample(s)", len(in_tsv))
+    frames = []
+    for f in in_tsv:
+        sample_df = pd.read_pickle(f)
+        sample_df["sample"] = os.path.basename(os.path.dirname(f))
+        frames.append(sample_df)
+    transcripts_df = pd.concat(frames, ignore_index=True)
 
-    logging.debug("Filtering low count genes")
+    logging.debug("Filtering low count genes (pooled across samples)")
     transcripts_df = hex_bin.filter_min_transcripts_gene(transcripts_df, min_transcripts_per_gene=params["bin"]["min_transcripts_per_gene"])
 
-    logging.debug("Calculating hex bins")
-    transcripts_df = hex_bin.transcript_to_hex_bins(transcripts_df, x_offset=0, y_offset=0, hex_width=params["bin"]["hex_width"])
+    logging.debug("Calculating per-sample hex bins")
+    transcripts_df = bin_hex_per_sample(transcripts_df, hex_width=params["bin"]["hex_width"])
 
     logging.debug("Filtering low count hex bins")
     transcripts_df = hex_bin.filter_bins_min_count(transcripts_df, min_transcripts_per_hex=params["bin"]["min_transcripts_per_hex"])
-
-    logging.debug("Initialising minibatch parameters")
-    params["bin"] = minibatch.batch_dimensions(transcripts_df, **params["bin"])
 
     logging.debug("Reformatting the dataframe")
     mtx_csr, hex_ids, genes = df_to_mtx(transcripts_df)

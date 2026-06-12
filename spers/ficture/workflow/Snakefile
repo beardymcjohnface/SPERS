@@ -6,6 +6,15 @@ config.update(config["spers"])
 config.update(config["spers"]["ficture"])
 
 
+# Samples processed together (one shared model, per-sample outputs)
+SAMPLES = list(config["args"]["samples"].keys())
+
+
+# Keep sample wildcards from greedily eating path separators
+wildcard_constraints:
+    sample = r"[^/]+"
+
+
 # Rules files
 include: os.path.join(workflow.basedir, "rules", "preflight.smk")
 include: os.path.join(workflow.basedir, "rules", "preprocessing.smk")

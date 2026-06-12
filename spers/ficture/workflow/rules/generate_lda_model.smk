@@ -1,13 +1,14 @@
+# Joint model: trained once on all samples together (shared factors)
 rule generate_lda_model:
     input:
         tsv = targets["transcripts"],
     output:
-        fit = targets["model_fit"],
-        res = targets["model_res"],
-        coh = targets["model_coh"],
-        pos = targets["model_pos"],
-        mtx = targets["model_mtx"],
-        mdl = targets["model_mdl"]
+        fit = model_files["model_fit"],
+        res = model_files["model_res"],
+        coh = model_files["model_coh"],
+        pos = model_files["model_pos"],
+        mtx = model_files["model_mtx"],
+        mdl = model_files["model_mdl"]
     params:
         params=config["lda_model"]
     log:
@@ -25,18 +26,20 @@ rule generate_lda_model:
         os.path.join(dirs["scripts"],"generate_lda_model.py")
 
 
+# One coarse model plot per sample (samples share coordinates, so plot separately)
 rule model_hex_bin_plot:
     input:
-        fit = targets["model_fit"],
+        fit = model_files["model_fit"],
     output:
-        png = targets["model_png"],
+        png = patterns["model_png"],
     params:
         hex_width=config["lda_model"]["bin"]["hex_width"],
-        plot=config["plot"]
+        plot=config["plot"],
+        sample=lambda w: w.sample
     log:
-        os.path.join(dirs["logs"],"model_hex_bin_plot.txt")
+        os.path.join(dirs["logs"],"{sample}_model_hex_bin_plot.txt")
     benchmark:
-        os.path.join(dirs["bench"],"model_hex_bin_plot.txt")
+        os.path.join(dirs["bench"],"{sample}_model_hex_bin_plot.txt")
     threads:
         config["resources"]["ram"]["cpu"]
     resources:

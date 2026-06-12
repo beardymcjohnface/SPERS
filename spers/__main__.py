@@ -123,13 +123,39 @@ Available targets:
 """
 
 
+def derive_sample_names(inputs):
+    """
+    Map each input path to a unique sample name derived from its basename.
+
+    Multiple samples are processed together (one shared model). Sample names are
+    used to organise per-sample outputs under results/<sample>/.
+    """
+    samples = {}
+    for path in inputs:
+        p = path.rstrip("/\\")
+        name = os.path.basename(p)
+        # Visium HD: --input points at a Space Ranger "outs" dir; use its parent
+        if name == "outs":
+            name = os.path.basename(os.path.dirname(p))
+        for ext in (".csv.gz", ".tsv.gz", ".csv", ".tsv", ".gz"):
+            if name.endswith(ext):
+                name = name[: -len(ext)]
+                break
+        if name in samples:
+            raise click.UsageError(
+                f"Duplicate sample name '{name}' derived from inputs; "
+                f"rename inputs so their basenames are unique.")
+        samples[name] = path
+    return samples
+
+
 @click.command(
     epilog=help_msg_extra,
     context_settings=dict(
         help_option_names=["-h", "--help"], ignore_unknown_options=True
     ),
 )
-@click.option("--input", help="Input file/directory", type=str, required=True)
+@click.option("--input", help="Input file/directory; repeat --input for multiple samples", type=str, required=True, multiple=True)
 @click.option("--platform", help="Spatialomics platform", default="xenium", show_default=True, type=click.Choice(["xenium", "cosmx", "visiumhd", "ficture"]))
 @common_options
 @click.option("--configfile",
@@ -144,6 +170,9 @@ Available targets:
               hidden=True)
 def ficture(**kwargs):
     """Run ficture pipeline"""
+    kwargs["input"] = list(kwargs["input"])
+    kwargs["samples"] = derive_sample_names(kwargs["input"])
+
     merge_config = {
         "spers": {
             "args": kwargs
@@ -181,8 +210,10 @@ def ficture_test(**kwargs):
             "args": kwargs
         }
     }
-    merge_config["spers"]["args"]["input"] = snake_base(os.path.join("ficture", "test_data", "xenium.smol.csv.gz"))
+    test_input = snake_base(os.path.join("ficture", "test_data", "xenium.smol.csv.gz"))
+    merge_config["spers"]["args"]["input"] = [test_input]
     merge_config["spers"]["args"]["platform"] = "xenium"
+    merge_config["spers"]["args"]["samples"] = {"xenium_smol": test_input}
 
     run_snakemake(
         snakefile_path=snake_base(os.path.join("ficture", "workflow", "Snakefile")),

@@ -1,27 +1,34 @@
+# Resolve a sample's input path (one converter job per sample)
+def sample_input(wildcards):
+    return config["args"]["samples"][wildcards.sample]
+
+
 if config["args"]["platform"] == "visiumhd":
 
     # Visium HD ships binned outputs rather than a per-transcript CSV.
-    # --input should point at the Space Ranger "outs/" directory.
-    visiumhd_params = config["visiumhd"]
-    visiumhd_bin_dir = os.path.join(
-        config["args"]["input"], "binned_outputs", visiumhd_params["bin_size"]
-    )
+    # Each --input should point at a Space Ranger "outs/" directory.
+    def visiumhd_file(*parts):
+        def _resolve(wildcards):
+            return os.path.join(
+                config["args"]["samples"][wildcards.sample],
+                "binned_outputs", config["visiumhd"]["bin_size"], *parts)
+        return _resolve
 
     rule visiumhd_to_tsv:
         input:
-            mtx = os.path.join(visiumhd_bin_dir, "filtered_feature_bc_matrix", "matrix.mtx.gz"),
-            barcodes = os.path.join(visiumhd_bin_dir, "filtered_feature_bc_matrix", "barcodes.tsv.gz"),
-            features = os.path.join(visiumhd_bin_dir, "filtered_feature_bc_matrix", "features.tsv.gz"),
-            positions = os.path.join(visiumhd_bin_dir, "spatial", "tissue_positions.parquet"),
-            scalefactors = os.path.join(visiumhd_bin_dir, "spatial", "scalefactors_json.json"),
+            mtx = visiumhd_file("filtered_feature_bc_matrix", "matrix.mtx.gz"),
+            barcodes = visiumhd_file("filtered_feature_bc_matrix", "barcodes.tsv.gz"),
+            features = visiumhd_file("filtered_feature_bc_matrix", "features.tsv.gz"),
+            positions = visiumhd_file("spatial", "tissue_positions.parquet"),
+            scalefactors = visiumhd_file("spatial", "scalefactors_json.json"),
         output:
-            targets["transcripts"],
+            patterns["transcripts"],
         params:
-            params = visiumhd_params
+            params = config["visiumhd"]
         log:
-            os.path.join(dirs["logs"], "visiumhd_to_tsv.txt")
+            os.path.join(dirs["logs"], "{sample}_visiumhd_to_tsv.txt")
         benchmark:
-            os.path.join(dirs["bench"], "visiumhd_to_tsv.txt")
+            os.path.join(dirs["bench"], "{sample}_visiumhd_to_tsv.txt")
         threads:
             config["resources"]["big"]["cpu"]
         resources:
@@ -36,15 +43,15 @@ else:
 
     rule transcript_csv_to_tsv:
         input:
-            config["args"]["input"]
+            sample_input
         output:
-            targets["transcripts"],
+            patterns["transcripts"],
         params:
             params = config[config["args"]["platform"]]
         log:
-            os.path.join(dirs["logs"], "transcript_csv_to_tsv.txt")
+            os.path.join(dirs["logs"], "{sample}_transcript_csv_to_tsv.txt")
         benchmark:
-            os.path.join(dirs["bench"], "transcript_csv_to_tsv.txt")
+            os.path.join(dirs["bench"], "{sample}_transcript_csv_to_tsv.txt")
         conda:
             os.path.join(dirs["envs"], "pyscripts.yaml")
         script:

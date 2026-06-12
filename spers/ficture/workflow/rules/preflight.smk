@@ -12,26 +12,38 @@ dirs = {
 }
 
 
-# Targets
-targets = {
-    # Converted transcripts (pickled dataframe, preserves dtypes/precision)
-    "transcripts": os.path.join(dirs["results"], "transcripts.pkl"),
+n_factors = config["lda_model"]["lda"]["n_components"]
 
-    # lda model files
-    "model_fit": os.path.join(dirs["model"], "fit.tsv.gz"),
+
+# Per-sample path patterns (carry the {sample} wildcard; used by rules)
+patterns = {
+    "transcripts": os.path.join(dirs["results"], "{sample}", "transcripts.pkl"),
+    "rescore": os.path.join(dirs["results"], "{sample}", "scored_transcripts", "transcripts.rescored.pkl"),
+    "scored_top_png": os.path.join(dirs["results"], "{sample}", "scored_transcripts", "top_factor.png"),
+    "scored_factor_png": os.path.join(dirs["results"], "{sample}", "scored_transcripts", "factor_{k}.png"),
+    "model_png": os.path.join(dirs["model"], "{sample}", "plot.png"),
+}
+
+
+# Shared (single) joint-model outputs
+model_files = {
+    "model_fit": os.path.join(dirs["model"], "fit.tsv.gz"),   # combined, has a 'sample' column
     "model_res": os.path.join(dirs["model"], "results.pkl"),
     "model_coh": os.path.join(dirs["model"], "coherence.tsv.gz"),
     "model_pos": os.path.join(dirs["model"], "posterior_counts.tsv.gz"),
     "model_mtx": os.path.join(dirs["model"], "matrix.tsv.gz"),
     "model_mdl": os.path.join(dirs["model"], "model.pkl"),
-    "model_png": os.path.join(dirs["model"], "plot.png"),
+}
 
-    # Overlap rescore files
-    "overlapped_hex_scores": os.path.join(dirs["rescore"], "transcripts.rescored.pkl"),
-    "scored_top_png": os.path.join(dirs["rescore"], "top_factor.png"),
-    "scored_factor_png": expand(
-        os.path.join(dirs["rescore"], "factor_{k}.png"),
-        k=range(config["lda_model"]["lda"]["n_components"])),
+
+# Targets for `rule all` (expanded over samples / factors)
+targets = {
+    "transcripts": expand(patterns["transcripts"], sample=SAMPLES),
+    **model_files,
+    "model_png": expand(patterns["model_png"], sample=SAMPLES),
+    "rescore": expand(patterns["rescore"], sample=SAMPLES),
+    "scored_top_png": expand(patterns["scored_top_png"], sample=SAMPLES),
+    "scored_factor_png": expand(patterns["scored_factor_png"], sample=SAMPLES, k=range(n_factors)),
 }
 
 

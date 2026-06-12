@@ -38,6 +38,17 @@ spers ficture --input transcripts.csv.gz --platform xenium
 spers ficture --input transcripts.csv.gz --platform cosmx
 ```
 
+__Process multiple samples together__
+
+Pass `--input` once per sample. All samples are trained into a single shared
+model (so the factors are directly comparable across samples), and each sample
+gets its own scored outputs under `results/<sample>/`. The sample name is taken
+from each input's file/directory name.
+
+```shell
+spers ficture --input sample1.csv.gz --input sample2.csv.gz --platform xenium
+```
+
 __Run the test dataset__
 ```shell
 spers ficture-test
@@ -61,9 +72,9 @@ import pandas as pd
 from spers.ficture.workflow.scripts.hex_bin import transcript_to_hex_bins
 
 transcripts_df = pd.read_pickle(
-    "spers.out/ficture/results/transcripts.pkl").set_index("transcript_id")
+    "spers.out/ficture/results/<sample>/transcripts.pkl").set_index("transcript_id")
 scored_df = pd.read_pickle(
-    "spers.out/ficture/results/scored_transcripts/transcripts.rescored.pkl").set_index("transcript_id")
+    "spers.out/ficture/results/<sample>/scored_transcripts/transcripts.rescored.pkl").set_index("transcript_id")
 
 transcripts_df = pd.concat((transcripts_df, scored_df), axis=1, join="inner")
 transcripts_df = transcript_to_hex_bins(transcripts_df, hex_width=16) # I used 24 but 16 um is probably better IDK
